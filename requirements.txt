@@ -1,0 +1,31 @@
+name: Homelab Dashboard
+version: "1.0.0"
+slug: homelab_dashboard
+description: >-
+  Konsolidiertes Dashboard fuer HASS-Pi, Ubuntu-Server und Pi-hole
+  (CPU, Temp, RAM, Storage, Netzwerk, Updates, Pi-hole-Stats, Claude-Usage).
+url: "https://local/homelab-dashboard"
+arch:
+  - aarch64
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:view-dashboard-variant
+panel_title: Homelab
+hassio_api: true
+hassio_role: default
+homeassistant_api: true
+options:
+  ubuntu_host: "192.168.178.75"
+  pihole_host: "192.168.178.5"
+  glances_port: 61208
+  pihole_password: ""
+  usage_url: "http://192.168.178.75:8787/usage"
+  refresh_seconds: 15
+schema:
+  ubuntu_host: str
+  pihole_host: str
+  glances_port: port
+  pihole_password: password?
+  usage_url: str?
+  refresh_seconds: int(5,120)
