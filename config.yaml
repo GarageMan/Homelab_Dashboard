@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homelab Dashboard</title>
+<style>
+  :root{
+    --bg:#0e1322; --card:#171d33; --card2:#1d2540; --line:#2a3255;
+    --txt:#e8ebf5; --muted:#8b93b5; --lbl:#7aa2ff;
+    --ok:#3ddc84; --warn:#e2494a; --amber:#ffbe3c; --accent:#8b7bff;
+    --rad:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       -webkit-font-smoothing:antialiased;padding:18px;}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin:2px 4px 16px;}
+  header h1{font-size:19px;font-weight:600;margin:0;letter-spacing:.3px}
+  header .meta{font-size:12px;color:var(--muted)}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);
+        padding:16px 18px;min-height:120px;}
+  .card h2{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;margin:0 0 12px;}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+  .dot.ok{background:var(--ok)} .dot.bad{background:var(--warn)}
+  .sub{font-size:11.5px;color:var(--muted);font-weight:400;margin-left:auto}
+  .row{display:flex;justify-content:space-between;font-size:13px;margin:5px 0;gap:10px}
+  .row .k{color:var(--lbl)} .row .v{color:var(--txt);text-align:right;font-variant-numeric:tabular-nums}
+  .bar{height:8px;border-radius:6px;background:#0c1122;overflow:hidden;margin:3px 0 9px}
+  .bar>span{display:block;height:100%;border-radius:6px;background:var(--accent);transition:width .5s}
+  .bar>span.g{background:var(--ok)} .bar>span.a{background:var(--amber)} .bar>span.r{background:var(--warn)}
+  .barlbl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600}
+  .pill.ok{background:rgba(61,220,132,.15);color:var(--ok)}
+  .pill.warn{background:rgba(226,73,74,.15);color:var(--warn)}
+  .pill.amber{background:rgba(255,190,60,.15);color:var(--amber)}
+  .hr{height:1px;background:var(--line);margin:12px -18px}
+  .err{color:var(--warn);font-size:12.5px}
+  /* Claude-Usage-Ringe */
+  .usage{display:flex;gap:22px;align-items:center;justify-content:space-around;flex-wrap:wrap}
+  .ring{position:relative;width:118px;text-align:center}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .pct{position:absolute;top:38px;left:0;right:0;font-size:22px;font-weight:700}
+  .ring .cap{font-size:12px;color:var(--muted);margin-top:6px;text-transform:uppercase;letter-spacing:.5px}
+  .ring .reset{font-size:12px;color:var(--txt);margin-top:2px}
+  .ring .reset small{color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Homelab Dashboard</h1>
+  <div class="meta"><span id="stamp">…</span></div>
+</header>
+<div class="grid" id="grid"></div>
+
+<script>
+const $ = (h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
+const fmtBytes=(b)=>{if(b==null)return'–';const u=['B','KB','MB','GB','TB'];let i=0;b=+b;while(b>=1024&&i<u.length-1){b/=1024;i++;}return b.toFixed(b<10&&i>0?1:0)+' '+u[i];};
+const fmtRate=(b)=>b==null?'–':fmtBytes(b)+'/s';
+const n=(v,s='')=>v==null?'–':(Math.round(v*10)/10)+s;
+const cls=(p)=>p==null?'':p>=90?'r':p>=75?'a':'g';
+const grp=(x)=>x==null?'–':(+x).toLocaleString('de-DE');
+
+function bar(label,pct,extra=''){
+  return `<div class="barlbl"><span>${label}</span><span>${pct==null?'–':n(pct,' %')}${extra}</span></div>
+          <div class="bar"><span class="${cls(pct)}" style="width:${pct==null?0:Math.min(100,pct)}%"></span></div>`;
+}
+
+function generalCard(title,d){
+  if(!d||!d.ok){
+    return `<div class="card"><h2><span class="dot bad"></span>${title}
+            <span class="sub">nicht erreichbar</span></h2>
+            <div class="err">${(d&&d.error)||'keine Daten'}</div></div>`;
+  }
+  const temp = d.temp_c!=null?`<div class="row"><span class="k">Temperatur</span><span class="v">${n(d.temp_c,' °C')}</span></div>`:'';
+  const net = (d.net_rx!=null)?`<div class="row"><span class="k">Netzwerk</span><span class="v">↓ ${fmtRate(d.net_rx)} · ↑ ${fmtRate(d.net_tx)}</span></div>`:'';
+  const load = d.load?`<div class="row"><span class="k">Load</span><span class="v">${d.load.join('  ')}</span></div>`:'';
+  return `<div class="card">
+    <h2><span class="dot ok"></span>${title}<span class="sub">${d.os||''}</span></h2>
+    ${bar('CPU', d.cpu_pct)}
+    ${bar('RAM', d.mem_pct, d.mem_total?` · ${fmtBytes(d.mem_used)} / ${fmtBytes(d.mem_total)}`:'')}
+    ${bar('Storage /', d.disk_pct, d.disk_total?` · ${fmtBytes(d.disk_used)} / ${fmtBytes(d.disk_total)}`:'')}
+    ${temp}${net}${load}
+    <div class="row"><span class="k">Uptime</span><span class="v">${d.uptime||'–'}</span></div>
+  </div>`;
+}
+
+function hassCard(d){
+  if(!d||!d.ok) return generalCard('Home Assistant (Pi)',d);
+  const up = d.updates_total>0
+    ? `<span class="pill amber">${d.updates_total} Update${d.updates_total>1?'s':''}</span>`
+    : `<span class="pill ok">aktuell</span>`;
+  const ent = d.entities||{};
+  const un = ent.unavailable;
+  const unpill = un==null?'':(un>0?`<span class="pill warn">${un} nicht verfügbar</span>`:`<span class="pill ok">alle verfügbar</span>`);
+  return `<div class="card">
+    <h2><span class="dot ok"></span>Home Assistant (Pi)<span class="sub">${d.os||''}</span></h2>
+    ${d.cpu_pct!=null?bar('CPU', d.cpu_pct):''}
+    ${d.mem_pct!=null?bar('RAM', d.mem_pct):''}
+    ${d.disk_pct!=null?bar('Storage', d.disk_pct, d.disk_total?` · ${fmtBytes(d.disk_used)} / ${fmtBytes(d.disk_total)}`:''):''}
+    ${d.temp_c!=null?`<div class="row"><span class="k">Temperatur</span><span class="v">${n(d.temp_c,' °C')}</span></div>`:''}
+    <div class="row"><span class="k">HA-Version</span><span class="v">${d.ha_version||'–'}</span></div>
+    <div class="row"><span class="k">Updates</span><span class="v">${up}</span></div>
+    <div class="hr"></div>
+    <div class="row"><span class="k">Entitäten</span><span class="v">${grp(ent.total)} · ${grp(ent.automations)} Automationen</span></div>
+    <div class="row"><span class="k">Gesundheit</span><span class="v">${unpill}</span></div>
+    <div class="row"><span class="k">Uptime</span><span class="v">${d.uptime||'–'}</span></div>
+  </div>`;
+}
+
+function piholeCard(d){
+  if(!d||!d.ok) return generalCard('Pi-hole',d);
+  const on = d.blocking==='enabled';
+  const stat = on?`<span class="pill ok">Aktiv</span>`:`<span class="pill warn">${d.blocking==='disabled'?'Inaktiv':d.blocking}</span>`;
+  return `<div class="card">
+    <h2><span class="dot ${on?'ok':'bad'}"></span>Pi-hole<span class="sub">${d.host}</span></h2>
+    <div class="row"><span class="k">Status</span><span class="v">${stat}</span></div>
+    ${bar('Geblockt heute', d.percent)}
+    <div class="row"><span class="k">Queries heute</span><span class="v">${grp(d.queries)}</span></div>
+    <div class="row"><span class="k">Geblockt heute</span><span class="v">${grp(d.blocked)}</span></div>
+    <div class="row"><span class="k">Blocklist</span><span class="v">${grp(d.gravity)} Domains</span></div>
+    <div class="row"><span class="k">Aktive Clients</span><span class="v">${grp(d.clients_active)}</span></div>
+    ${d.top_blocked?`<div class="row"><span class="k">Top geblockt</span><span class="v">${d.top_blocked}</span></div>`:''}
+    ${d.top_client?`<div class="row"><span class="k">Top Client</span><span class="v">${d.top_client}</span></div>`:''}
+  </div>`;
+}
+
+function ring(pct,cap,resetTs){
+  const R=52,C=2*Math.PI*R, p=Math.max(0,Math.min(100,pct||0));
+  const off=C*(1-p/100);
+  const col=p>=90?'var(--warn)':p>=75?'var(--amber)':'var(--accent)';
+  let rin='–',rat='';
+  if(resetTs){
+    const s=Math.max(0,resetTs*1 - Date.now()/1000);
+    const dd=Math.floor(s/86400),hh=Math.floor((s%86400)/3600),mm=Math.floor((s%3600)/60);
+    rin = dd>0?`${dd}d ${hh}h`:`${hh}h ${mm}m`;
+    const dt=new Date(resetTs*1000);
+    rat = dt.toLocaleString('de-DE',{weekday:'short',hour:'2-digit',minute:'2-digit'});
+  }
+  return `<div class="ring">
+    <svg width="118" height="118">
+      <circle cx="59" cy="59" r="${R}" fill="none" stroke="#232a49" stroke-width="10"/>
+      <circle cx="59" cy="59" r="${R}" fill="none" stroke="${col}" stroke-width="10"
+              stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}"/>
+    </svg>
+    <div class="pct">${Math.round(p)}%</div>
+    <div class="cap">${cap}</div>
+    <div class="reset">${rin}<br><small>${rat}</small></div>
+  </div>`;
+}
+
+function usageCard(d){
+  if(!d||!d.ok){
+    return `<div class="card"><h2><span class="dot bad"></span>Claude Usage
+            <span class="sub">nicht erreichbar</span></h2>
+            <div class="err">${(d&&d.error)||'kein Exporter'}</div></div>`;
+  }
+  return `<div class="card">
+    <h2><span class="dot ok"></span>Claude Usage<span class="sub">${d.plan||''}</span></h2>
+    <div class="usage">
+      ${ring(d.session_pct,'Session (5h)',d.session_reset)}
+      ${ring(d.weekly_pct,'Weekly (7d)',d.weekly_reset)}
+    </div>
+  </div>`;
+}
+
+async function tick(){
+  try{
+    const res = await fetch('api/data',{cache:'no-store'});
+    const d = await res.json();
+    const g = document.getElementById('grid');
+    g.innerHTML='';
+    g.appendChild($(hassCard(d.hass)));
+    g.appendChild($(generalCard('Ubuntu-Server', d.ubuntu)));
+    g.appendChild($(piholeCard(d.pihole)));
+    g.appendChild($(usageCard(d.usage)));
+    document.getElementById('stamp').textContent =
+      'aktualisiert '+new Date(d.ts*1000).toLocaleTimeString('de-DE');
+  }catch(e){
+    document.getElementById('stamp').textContent='Fehler beim Laden';
+  }
+}
+
+let iv=15000;
+fetch('api/config').then(r=>r.json()).then(c=>{iv=(c.refresh_seconds||15)*1000;}).catch(()=>{});
+tick();
+setInterval(tick, iv);
+</script>
+</body>
+</html>
