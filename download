@@ -1,0 +1,24 @@
+# --- Laufzeit-Daten des Add-ons (enthalten deine echten Optionen inkl. Pi-hole-Passwort!) ---
+/data/
+options.json
+
+# --- Anthropic / Claude Code Credentials — NIEMALS committen ---
+.credentials.json
+**/.claude/
+.env
+*.env
+secrets.*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
