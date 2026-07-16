@@ -1,137 +1,321 @@
-# Homelab Dashboard – Installation
+# Homelab Dashboard — Installation & Betrieb
 
-Ein Home-Assistant-Add-on (laeuft auf dem HAOS-Pi, <IP3>), das die drei
-Server auf einen Blick zeigt: **HASS-Pi**, **Ubuntu-Server** und **Pi-hole**,
-plus eine **Claude-Usage**-Kachel.
-
-Datenquellen:
-- HASS-Pi: Supervisor- + Core-API (im Add-on ohne Zusatzkonfiguration verfuegbar)
-- Ubuntu-Server & Pi-hole: **Glances** (REST-API, Port 61208)
-- Pi-hole zusaetzlich: **Pi-hole-v6-API**
-- Claude-Usage: **Exporter** auf dem Ubuntu-Server (Port 8787)
+Ein Home-Assistant-Add-on, das drei Server auf einen Blick zusammenfasst —
+**HASS-Pi**, **Ubuntu-Server** und **Pi-hole** — plus eine **Claude-Usage**-Kachel.
+Es läuft als Ingress-Panel direkt in der Home-Assistant-Seitenleiste
+(HA-Login, kein offener Port).
 
 ---
 
-## 1. Glances auf Ubuntu-Server und Pi-hole
+## Platzhalter für IP-Adressen
 
-Auf **beiden** Linux-Servern (Ubuntu FS: <IP1> und Pi-Hole: <IP2>):
+In dieser Anleitung stehen **Platzhalter** statt echter IP-Adressen. Ersetze sie
+überall durch die Werte deiner Umgebung:
+
+| Platzhalter        | Bedeutung                                             |
+|--------------------|-------------------------------------------------------|
+| `IP-Homeassistant` | der HAOS-Raspberry-Pi (auf dem das Add-on läuft)      |
+| `IP-Ubuntu-FS`     | der Ubuntu-Server (Fileserver / DayZ / Kleinigkeiten) |
+| `IP-Pi-Hole`       | der Pi-hole-Server                                    |
+| `<benutzer>`       | dein Linux-Benutzername auf dem jeweiligen Server     |
+
+Beispiel: Steht in der Anleitung `http://IP-Ubuntu-FS:61208`, trägst du die echte
+Adresse deines Ubuntu-Servers ein.
+
+---
+
+## Überblick / Datenquellen
+
+| Server                | Allgemeine Metriken | Spezifisches                          |
+|-----------------------|---------------------|---------------------------------------|
+| HASS-Pi               | Supervisor- + Core-API (im Add-on ohne Zusatzkonfiguration) + Systemmonitor-Sensoren | HA-Version, Updates, Entitäten-Health |
+| Ubuntu-Server         | Glances-REST-API (Port 61208) | —                          |
+| Pi-hole               | Glances-REST-API (Port 61208) | Pi-hole-v6-API (Queries, Blocking …) |
+| Claude Usage          | Exporter auf dem Ubuntu-Server (Port 8787) | Session-/Weekly-Auslastung |
+
+Ein FastAPI-Aggregator im Add-on fragt alle Quellen parallel und gekapselt ab;
+fällt eine aus, zeigt nur ihre Kachel „nicht erreichbar", das Board bleibt stehen.
+
+---
+
+## 1. Glances auf Ubuntu-Server **und** Pi-hole
+
+Auf **beiden** Linux-Servern (`IP-Ubuntu-FS` und `IP-Pi-Hole`) installieren.
+Glances 4 stellt im Web-/API-Modus (`-w`) alle allgemeinen Metriken über eine
+REST-API bereit.
+
+### Installation
+
+Zwei Wege — der **venv-Weg funktioniert überall** (auch auf älterem Raspbian
+Bullseye mit Python 3.9) und ist daher die sichere Wahl:
 
 ```bash
-sudo apt update
+# --- Weg A: venv (universell) ---
+sudo apt update && sudo apt install -y python3-venv lm-sensors
+python3 -m venv ~/glances-venv
+~/glances-venv/bin/pip install --upgrade pip
+~/glances-venv/bin/pip install 'glances[web]'
+~/glances-venv/bin/glances --version        # Pfad merken: ~/glances-venv/bin/glances
+```
+
+```bash
+# --- Weg B: pipx (nur auf Systemen mit AKTUELLEM pipx, z. B. Ubuntu 24.04) ---
 sudo apt install -y pipx lm-sensors
 pipx ensurepath
 pipx install 'glances[web]'
-sudo sensors-detect --auto        # fuer CPU-Temperatur (auf dem Pi optional)
-
-# Web/REST-API-Modus als Dienst
-sudo cp glances-web.service /etc/systemd/system/glances-web.service
-# Pfad zu glances pruefen und ggf. in der .service-Datei anpassen:
-which glances                     # z. B. /home/<user>/.local/bin/glances
-sudo systemctl daemon-reload
-sudo systemctl enable --now glances-web.service
-
-# Test:
-curl http://localhost:61208/api/4/cpu
+which glances                                # Pfad merken: meist ~/.local/bin/glances
 ```
 
-> Sicherheit: Glances bindet an alle Interfaces und ist ohne Auth im LAN lesbar.
-> In einem vertrauenswuerdigen Heimnetz ok. Sonst mit `--password` starten
-> (in der `.service`-Datei ergaenzen) oder per Firewall auf die HASS-Pi-IP begrenzen:
-> `sudo ufw allow from <IP3> to any port 61208 proto tcp`
+> **Achtung Raspbian Bullseye (Pi-hole):** Das `pipx` aus den apt-Paketquellen ist
+> dort uralt (v0.12) und bricht mit `TypeError: __init__() got an unexpected
+> keyword argument 'encoding'` ab. Nimm auf diesem Gerät **Weg A (venv)** — oder
+> aktualisiere pipx zuerst mit `sudo apt remove -y pipx && python3 -m pip install
+> --user pipx`.
+
+`sensors-detect --auto` (einmalig, mit `sudo`) hilft, damit Glances die
+CPU-Temperatur findet.
+
+### Als Dienst einrichten
+
+Der `ExecStart`-Pfad muss auf dein tatsächliches Glances zeigen (venv **oder**
+pipx — siehe oben). `$USER` und `$HOME` setzt die Shell beim Anlegen automatisch:
+
+```bash
+sudo tee /etc/systemd/system/glances-web.service > /dev/null << EOF
+[Unit]
+Description=Glances (Web/REST-API) fuer Homelab Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$USER
+# venv:  $HOME/glances-venv/bin/glances
+# pipx:  $HOME/.local/bin/glances
+ExecStart=$HOME/glances-venv/bin/glances -w -t 5
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now glances-web.service
+systemctl status glances-web.service --no-pager
+```
+
+### Funktionstest
+
+```bash
+curl -s http://localhost:61208/api/4/cpu | grep -o '"total":[^,]*'
+```
+
+> **Wichtig zu den CPU-Werten (Glances 4.4):** Eine **Einzelabfrage** kurz nach
+> dem Start (oder auf einem Leerlauf-System) zeigt `"total": 0.0` — das ist
+> normal. CPU-Prozente werden über ein Intervall berechnet und brauchen zwei
+> Messungen mit **> 5 s** Abstand. Testen mit etwas Last:
+> ```bash
+> timeout 25 yes >/dev/null &
+> for i in 1 2 3; do sleep 8; curl -s http://localhost:61208/api/4/cpu | grep -o '"total":[^,]*'; done
+> ```
+> Die Werte sollten ansteigen. Fürs Dashboard ist das unkritisch — es fragt alle
+> 15 s ab, also immer mit frisch berechneten Werten.
+
+### Absicherung (optional)
+
+Glances lauscht ohne Passwort auf allen Interfaces — im vertrauenswürdigen
+Heim-LAN in Ordnung. Enger ziehen per Firewall auf die HASS-Pi-IP:
+
+```bash
+sudo ufw allow from IP-Homeassistant to any port 61208 proto tcp
+```
 
 ---
 
 ## 2. Claude-Usage-Exporter (nur Ubuntu-Server)
 
-### 2a. Claude Code einmalig anmelden
-Der Exporter braucht ein Claude-Code-OAuth-Token. Du nutzt Claude Code nie zum
-Coden – der Login dient nur als sich selbst erneuernde Anmeldung:
+Der Exporter liest die kontoweite Auslastung (Session 5 h / Weekly 7 d) über
+einen minimalen API-Call und stellt sie als JSON bereit. Er nutzt die Anmeldung
+von **Claude Code**.
+
+### 2a. Claude Code installieren und anmelden
 
 ```bash
-# Claude Code installieren (falls noch nicht vorhanden) und anmelden:
-#   siehe https://docs.claude.com  ->  Claude Code
-claude            # dann /login  -> Browser-Code-Flow mit deinem Claude-Abo
+echo "$ANTHROPIC_API_KEY"        # sollte LEER sein (sonst metered statt Abo)
+curl -fsSL https://claude.ai/install.sh | bash
+# neue Shell / source ~/.bashrc, dann:
+claude
 ```
 
-Danach existiert `~/.claude/.credentials.json`. Die Usage-Zahlen sind identisch
-zu deiner Windows-Desktop-App (Limits gelten kontoweit).
+Beim ersten Start durch den Browser-Login gehen (URL öffnen, einloggen, kurzen
+Code zurück ins Terminal). Danach existiert `~/.claude/.credentials.json`.
+Kurz mit `/status` prüfen (zeigt Abo + Limits), dann `/exit`.
 
-### 2b. Exporter als Dienst
+### 2b. Exporter ablegen und als Dienst starten
+
+Repo auf den Ubuntu-Server holen (öffentliches GitHub-Repo) und Exporter kopieren:
+
 ```bash
+cd ~ && git clone https://github.com/<DEIN-USER>/Homelab_Dashboard.git
 sudo mkdir -p /opt/claude-usage
-sudo cp claude-usage-exporter.py /opt/claude-usage/
-sudo chmod +x /opt/claude-usage/claude-usage-exporter.py
-
-# WICHTIG: <user> = der Benutzer, der bei Claude Code angemeldet ist
-sudo cp claude-usage-exporter.service /etc/systemd/system/claude-usage-exporter@.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now claude-usage-exporter@<user>.service
-
-# Test:
-curl http://localhost:8787/usage
+sudo cp ~/Homelab_Dashboard/ubuntu-server/claude-usage-exporter.py /opt/claude-usage/
 ```
 
-### 2c. Token frisch halten (optional, empfohlen)
-Da du Claude Code sonst nicht benutzt, kann das Token irgendwann ablaufen. Ein
-taeglicher Mini-Aufruf laesst Claude Code die Credentials erneuern:
+Dienst anlegen — er läuft als **dein Benutzer** und liest dessen
+Anmeldedatei (`<benutzer>` = dein Login):
 
 ```bash
-( crontab -l 2>/dev/null; echo "17 4 * * * /usr/bin/claude -p 'ping' >/dev/null 2>&1" ) | crontab -
+sudo tee /etc/systemd/system/claude-usage-exporter.service > /dev/null << 'EOF'
+[Unit]
+Description=Claude Usage Exporter (fuer Homelab Dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<benutzer>
+Environment=USAGE_PORT=8787
+Environment=USAGE_TTL=90
+Environment=CLAUDE_CRED=/home/<benutzer>/.claude/.credentials.json
+ExecStart=/usr/bin/python3 /opt/claude-usage/claude-usage-exporter.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# <benutzer> in der Datei durch deinen echten Login ersetzen, dann:
+sudo systemctl daemon-reload
+sudo systemctl enable --now claude-usage-exporter.service
+sleep 2 ; curl -s http://localhost:8787/usage ; echo
 ```
 
-Falls `/usage` einmal `HTTP 401` meldet: einmal `claude` ausfuehren – erledigt.
+Erwartung: `{"ok": true, "session_pct": ..., "weekly_pct": ...}`.
+
+> **Token-Lebensdauer:** Der Login-Token wird nur erneuert, während Claude Code
+> aktiv ist. Wird Claude Code auf dem Server lange gar nicht genutzt, kann er nach
+> Stunden ablaufen — dann meldet `/usage` einen `HTTP 401`. Abhilfe: einmal
+> `claude` auf dem Server ausführen, das frischt die Anmeldung auf.
+>
+> **Ausblick:** Ein dauerhaft gültiger Token wäre über `claude setup-token`
+> möglich (ein Jahr gültig, als `CLAUDE_CODE_OAUTH_TOKEN` in einer geschützten
+> `EnvironmentFile`). Das Herauskopieren dieses langen Tokens aus der Terminal-
+> Oberfläche ist allerdings fehleranfällig; der Login-Token oben ist der
+> zuverlässigere Weg für den Alltag.
 
 ---
 
-## 3. HASS-Pi: Systemmonitor aktivieren (fuer CPU/Temp/RAM des Pi)
+## 3. HASS-Pi: Systemmonitor-Integration aktivieren
 
-In Home Assistant: **Einstellungen -> Geraete & Dienste -> Integration hinzufuegen
--> „Systemmonitor"**. Das legt u. a. `sensor.processor_use`,
-`sensor.processor_temperature`, `sensor.memory_use_percent` an – genau die Werte,
-die das Dashboard fuer die HASS-Pi-Kachel liest. (Ohne die Integration zeigt die
-Kachel weiterhin Version/Updates/Entitaeten, nur die Live-Balken bleiben leer.)
+Liefert CPU-Last, CPU-Temperatur und RAM des HASS-Pi selbst (Werte für die
+HASS-Kachel). Läuft komplett in der HA-Oberfläche.
+
+1. **Einstellungen → Geräte & Dienste → „+ Integration hinzufügen" → „System Monitor"**
+2. **Wichtig:** Alle Entitäten der Integration sind **standardmäßig deaktiviert**
+   und als „Diagnose" markiert — deaktivierte Entitäten erscheinen **weder** in
+   Entwicklerwerkzeuge → Zustände **noch** in der normalen Entitätssuche. Du musst
+   die benötigten erst aktivieren: Integration öffnen → Gerät „System Monitor" →
+   Entität anklicken → Zahnrad → **Aktiviert** einschalten → Aktualisieren. Für:
+   - **Processor use** (CPU-Last, %)
+   - **Memory use** in **%** (nicht die MiB-Variante!)
+   - **Processor temperature** (falls vorhanden — siehe Hinweis)
+
+3. Danach in **Entwicklerwerkzeuge → Zustände** die **exakten** Entitäts-IDs
+   ablesen. Sie hängen von der **Sprache** der Oberfläche ab. Beispiel bei
+   deutscher Oberfläche:
+   - CPU-Last → `sensor.system_monitor_prozessornutzung`
+   - CPU-Temp → `sensor.system_monitor_prozessortemperatur`
+   - RAM %   → `sensor.system_monitor_arbeitsspeicherauslastung`
+
+4. Diese IDs in `homelab_dashboard/app/main.py` im Block `HA_SENSORS = {` eintragen
+   (Schlüssel `cpu`, `temp`, `mem`) und committen.
+
+> **CPU-Temperatur:** Ist in virtualisierten/Container-Umgebungen kein
+> Hardware-Temperatursensor verfügbar, wird die Temperatur-Entität gar nicht
+> angelegt — dann bleibt im Dashboard nur die Temperaturzeile leer, CPU und RAM
+> funktionieren trotzdem. (Auf vielen Raspberry-Pi-HAOS-Systemen ist die
+> Temperatur aber vorhanden.)
+>
+> **„Unbekannt" direkt nach dem Aktivieren:** Die CPU-Last steht anfangs kurz auf
+> „Unbekannt", bis die erste Intervall-Messung vorliegt — nach 1–2 Minuten
+> erscheint der Wert.
 
 ---
 
 ## 4. Das Add-on installieren
 
-### Variante A – als Repository per URL (empfohlen)
-1. In HA: **Einstellungen -> Add-ons -> Add-on-Store -> ⋮ -> Repositories**
-2. URL des Repos eintragen (`https://github.com/<user>/Homelab_Dashboard`) -> **Hinzufuegen**
-   (Repo muss oeffentlich sein – es enthaelt keine Geheimnisse.)
-3. Store neu laden -> „Homelab Dashboard" erscheint -> **Installieren**
-   (der Pi baut das Image, dauert 1–2 Minuten)
+Das Repo enthält eine `repository.yaml` und ist damit ein Add-on-Repository —
+Einbindung per URL, kein Dateikopieren nötig. (Menü-Beschriftungen der **deutschen**
+HA-Oberfläche.)
 
-### Variante B – lokal (ohne GitHub)
-Ueber dein **Samba**- oder **SSH**-Add-on den Ordner `homelab_dashboard/` ablegen unter:
-```
-\\<IP3>\addons\homelab_dashboard\
-```
-Dann **Add-on-Store -> ⋮ -> Neu laden** -> unter **Lokale Add-ons** installieren.
+1. **Einstellungen → Apps → App installieren** (der Add-on-Store)
+2. Oben rechts **⋮ → Repositories** → **„+ Hinzufügen"** → URL einfügen:
+   ```
+   https://github.com/<DEIN-USER>/Homelab_Dashboard
+   ```
+   → **Hinzufügen** → schließen
+3. Store neu laden (Seite aktualisieren). Im Abschnitt **„Homelab Add-ons"**
+   erscheint **„Homelab Dashboard"** → anklicken → **Installieren**.
+   Der Pi **baut das Image selbst** (`pip install` …) — das dauert **1–3 Minuten**.
+4. Reiter **Konfiguration** → Werte auf die eigene Umgebung setzen:
+   ```yaml
+   ubuntu_host: IP-Ubuntu-FS
+   pihole_host: IP-Pi-Hole
+   glances_port: 61208
+   pihole_password: "DEIN-PIHOLE-APP-PASSWORT"
+   usage_url: http://IP-Ubuntu-FS:8787/usage
+   refresh_seconds: 15
+   ```
+5. Reiter **Info** → **Starten** → **„In Seitenleiste anzeigen"** aktivieren.
+   Nach F5 erscheint **„Homelab"** in der Seitenleiste → öffnen.
 
-### Danach (beide Varianten)
-Tab **Konfiguration**: Werte pruefen/setzen
-   - `ubuntu_host: <IP1>`
-   - `pihole_host: <IP2>`
-   - `glances_port: 61208`
-   - `pihole_password:` dein Pi-hole-**App-Passwort**
-     (Pi-hole-Weboberflaeche -> Settings -> Web interface / API -> App password)
-   - `usage_url: http://<IP1>:8787/usage`
-   - `refresh_seconds: 15`
-4. **Starten**, „Auf Seitenleiste anzeigen" aktivieren -> Dashboard oeffnet sich
-   direkt in Home Assistant (Ingress, mit HA-Login, kein offener Port).
+> **Pi-hole-App-Passwort:** In der Pi-hole-Oberfläche unter **Settings → Web
+> interface / API → App password** erzeugen (nicht das normale Login-Passwort).
+
+### Updates des Add-ons
+
+Nach Änderungen im Repo die `version` in `homelab_dashboard/config.yaml` erhöhen
+(z. B. `1.0.1`) und committen. In HA: **Apps → ⋮ → Nach Updates suchen** → beim
+Add-on **Aktualisieren** → **Starten**.
 
 ---
 
-## Fehlersuche
+## 5. Konfigurationsoptionen
 
-| Symptom | Ursache / Loesung |
+| Option            | Bedeutung                                         | Beispiel                       |
+|-------------------|---------------------------------------------------|--------------------------------|
+| `ubuntu_host`     | Adresse des Ubuntu-Servers (Glances)              | `IP-Ubuntu-FS`                 |
+| `pihole_host`     | Adresse des Pi-hole (Glances + Pi-hole-API)       | `IP-Pi-Hole`                   |
+| `glances_port`    | Glances-Port auf beiden Servern                   | `61208`                        |
+| `pihole_password` | Pi-hole-**App**-Passwort                          | `••••••`                       |
+| `usage_url`       | URL des Claude-Usage-Exporters                    | `http://IP-Ubuntu-FS:8787/usage` |
+| `refresh_seconds` | Aktualisierungsintervall des Dashboards (5–120 s) | `15`                           |
+
+Alle Werte lassen sich jederzeit im Reiter **Konfiguration** ändern — kein
+Rebuild nötig.
+
+---
+
+## 6. Fehlersuche
+
+| Symptom | Ursache / Lösung |
 |---|---|
-| Add-on baut nicht | Logs im Add-on-Tab ansehen; Internet fuer den `pip install`-Schritt noetig |
-| Ubuntu/Pi-hole „nicht erreichbar" | `curl http://<ip>:61208/api/4/cpu` vom Pi aus testen; Firewall/Dienst pruefen |
+| Add-on baut nicht | Add-on-**Protokoll** ansehen; für den `pip install`-Schritt braucht der Pi einmal Internet |
+| Ubuntu/Pi-hole „nicht erreichbar" | Vom HASS-Pi aus `curl http://IP-…:61208/api/4/cpu` testen; Glances-Dienst und Firewall prüfen |
+| CPU zeigt 0 % | Glances-4.4-Verhalten bei Leerlauf/Einzelabfrage — siehe Hinweis in Abschnitt 1; im Dashboard unkritisch |
 | Pi-hole „auth fehlgeschlagen" | App-Passwort falsch/leer; in den Add-on-Optionen korrigieren |
-| HASS-Kachel ohne CPU/Temp | Systemmonitor-Integration aktivieren (Schritt 3) |
-| Claude Usage „nicht erreichbar" | Exporter-Dienst laeuft? `systemctl status claude-usage-exporter@<user>` |
-| Claude Usage `HTTP 401` | Token abgelaufen -> einmal `claude` ausfuehren; Keep-alive-Cron setzen |
+| HASS-Kachel ohne CPU/Temp/RAM | Systemmonitor-Entitäten aktiviert? Exakte IDs in `HA_SENSORS` eingetragen? (Abschnitt 3) |
+| HASS-Storage in „B" statt „GB" | Vor v1.0.1; auf aktuelle Add-on-Version aktualisieren |
+| Claude Usage „nicht erreichbar" | Exporter-Dienst läuft? `systemctl status claude-usage-exporter` |
+| Claude Usage `HTTP 401` | Login-Token abgelaufen → einmal `claude` auf dem Ubuntu-Server ausführen |
 
-Alle Werte lassen sich spaeter im Add-on-Tab **Konfiguration** aendern – kein Rebuild noetig.
+---
+
+## Versionshinweise
+
+- **1.0.1** — HASS-Pi-Storage korrekt in GB statt Bytes; Dokumentation an reale
+  Umgebung angepasst (venv/pipx-Glances, Login-Token-Exporter, sprachabhängige
+  Systemmonitor-IDs, deutsche Menüpfade).
+- **1.0.0** — Erstveröffentlichung.
