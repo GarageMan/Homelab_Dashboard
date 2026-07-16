@@ -97,7 +97,7 @@ Kachel weiterhin Version/Updates/Entitaeten, nur die Live-Balken bleiben leer.)
 
 ### Variante A – als Repository per URL (empfohlen)
 1. In HA: **Einstellungen -> Add-ons -> Add-on-Store -> ⋮ -> Repositories**
-2. URL des Repos eintragen (`https://github.com/<user>/homelab-dashboard`) -> **Hinzufuegen**
+2. URL des Repos eintragen (`https://github.com/<user>/Homelab_Dashboard`) -> **Hinzufuegen**
    (Repo muss oeffentlich sein – es enthaelt keine Geheimnisse.)
 3. Store neu laden -> „Homelab Dashboard" erscheint -> **Installieren**
    (der Pi baut das Image, dauert 1–2 Minuten)
