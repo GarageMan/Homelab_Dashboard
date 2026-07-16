@@ -1,6 +1,6 @@
 # Homelab Dashboard – Installation
 
-Ein Home-Assistant-Add-on (laeuft auf dem HAOS-Pi, IP3), das die drei
+Ein Home-Assistant-Add-on (laeuft auf dem HAOS-Pi, <IP3>), das die drei
 Server auf einen Blick zeigt: **HASS-Pi**, **Ubuntu-Server** und **Pi-hole**,
 plus eine **Claude-Usage**-Kachel.
 
@@ -14,7 +14,7 @@ Datenquellen:
 
 ## 1. Glances auf Ubuntu-Server und Pi-hole
 
-Auf **beiden** Linux-Servern (Ubuntu FS: IP1 und Pi-Hole: IP2):
+Auf **beiden** Linux-Servern (Ubuntu FS: <IP1> und Pi-Hole: <IP2>):
 
 ```bash
 sudo apt update
@@ -37,7 +37,7 @@ curl http://localhost:61208/api/4/cpu
 > Sicherheit: Glances bindet an alle Interfaces und ist ohne Auth im LAN lesbar.
 > In einem vertrauenswuerdigen Heimnetz ok. Sonst mit `--password` starten
 > (in der `.service`-Datei ergaenzen) oder per Firewall auf die HASS-Pi-IP begrenzen:
-> `sudo ufw allow from IP3 to any port 61208 proto tcp`
+> `sudo ufw allow from <IP3> to any port 61208 proto tcp`
 
 ---
 
@@ -105,18 +105,18 @@ Kachel weiterhin Version/Updates/Entitaeten, nur die Live-Balken bleiben leer.)
 ### Variante B – lokal (ohne GitHub)
 Ueber dein **Samba**- oder **SSH**-Add-on den Ordner `homelab_dashboard/` ablegen unter:
 ```
-\\IP3\addons\homelab_dashboard\
+\\<IP3>\addons\homelab_dashboard\
 ```
 Dann **Add-on-Store -> ⋮ -> Neu laden** -> unter **Lokale Add-ons** installieren.
 
 ### Danach (beide Varianten)
 Tab **Konfiguration**: Werte pruefen/setzen
-   - `ubuntu_host: IP1`
-   - `pihole_host: IP2`
+   - `ubuntu_host: <IP1>`
+   - `pihole_host: <IP2>`
    - `glances_port: 61208`
    - `pihole_password:` dein Pi-hole-**App-Passwort**
      (Pi-hole-Weboberflaeche -> Settings -> Web interface / API -> App password)
-   - `usage_url: http://IP1:8787/usage`
+   - `usage_url: http://<IP1>:8787/usage`
    - `refresh_seconds: 15`
 4. **Starten**, „Auf Seitenleiste anzeigen" aktivieren -> Dashboard oeffnet sich
    direkt in Home Assistant (Ingress, mit HA-Login, kein offener Port).
