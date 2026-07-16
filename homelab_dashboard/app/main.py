@@ -43,9 +43,9 @@ MOCK = os.getenv("HOMELAB_MOCK") == "1"
 
 # Systemmonitor-Entities des HASS-Pi (bei Bedarf hier anpassen)
 HA_SENSORS = {
-    "cpu": "sensor.processor_use",
-    "temp": "sensor.processor_temperature",
-    "mem": "sensor.memory_use_percent",
+    "cpu":  "sensor.system_monitor_prozessornutzung",
+    "temp": "sensor.system_monitor_prozessortemperatur",
+    "mem":  "sensor.system_monitor_arbeitsspeicherauslastung",
     "disk": "sensor.disk_use_percent",
 }
 
