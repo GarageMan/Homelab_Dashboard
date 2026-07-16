@@ -1,5 +1,5 @@
 name: Homelab Dashboard
-version: "1.0.0"
+version: "1.0.1"
 slug: homelab_dashboard
 description: >-
   Konsolidiertes Dashboard fuer HASS-Pi, Ubuntu-Server und Pi-hole
@@ -16,11 +16,11 @@ hassio_api: true
 hassio_role: default
 homeassistant_api: true
 options:
-  ubuntu_host: "192.168.1.75"
+  ubuntu_host: "192.168.1.6"
   pihole_host: "192.168.1.5"
   glances_port: 61208
   pihole_password: ""
-  usage_url: "http://192.168.1.75:8787/usage"
+  usage_url: "http://192.168.1.7:8787/usage"
   refresh_seconds: 15
 schema:
   ubuntu_host: str
