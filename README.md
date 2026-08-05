@@ -34,4 +34,4 @@ gelesen (Add-on-Optionen bzw. `~/.claude`). Die IPs in `config.yaml` sind Platzh
 
 ## Lizenz
 
-[MIT](LICENSE)
+
