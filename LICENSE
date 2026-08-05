@@ -1,21 +1,41 @@
-MIT License
+# ⚖️ Lizenz und Urheberrecht (License & Copyright)
 
-Copyright (c) 2026 <DEIN NAME ODER GITHUB-HANDLE>
+© 2026 Lutz Buchholz (GarageMan). Alle Rechte vorbehalten.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Dieses Projekt sowie alle zugehörigen Quellcodedateien und Dokumente
+sind urheberrechtlich geschützt.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+**Erlaubte Nutzung (Private & Non-Commercial):**
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- Die Nutzung, das Kopieren und Modifizieren dieser Software ist
+  ausschließlich für private, nicht-kommerzielle Zwecke gestattet.
+
+**Untersagte Nutzung (Commercial Use):**
+
+- Jegliche kommerzielle Nutzung, Verbreitung oder der Verkauf dieses
+  Codes (oder Teilen davon) – ob als eigenständiges Produkt oder
+  integriert in andere Systeme – ist ohne ausdrückliche, schriftliche
+  Genehmigung des Urhebers strikt untersagt.
+- Wenn Sie diese Software kommerziell nutzen oder auf Basis dieses
+  Projekts ein kommerzielles Produkt entwickeln möchten, ist vorab eine
+  individuelle Lizenzvereinbarung (inkl. Umsatzbeteiligung/Lizenzgebühr)
+  zu treffen.
+
+Für kommerzielle Anfragen oder Lizenzwünsche kontaktieren Sie mich
+bitte direkt über [garageman@gmx.net](mailto:garageman@gmx.net) oder
+per GitHub-Issue.
+
+---
+
+© 2026 Lutz Buchholz (GarageMan). All rights reserved.
+
+This project and its source code are protected by copyright law.
+
+- **Non-commercial use:** Allowed for private, educational, and
+  non-commercial purposes only.
+- **Commercial use:** Strictly prohibited without prior written
+  permission and a valid commercial license agreement (including
+  revenue sharing or licensing fees).
+
+For commercial licensing inquiries, please contact
+[garageman@gmx.net](mailto:garageman@gmx.net) or open an issue.
