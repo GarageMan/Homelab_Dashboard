@@ -32,6 +32,3 @@ Vollständige Anleitung (Glances, Claude-Usage-Exporter, Systemmonitor):
 Keine Geheimnisse im Repo: Pi-hole-Passwort und Claude-Token werden nur zur Laufzeit
 gelesen (Add-on-Optionen bzw. `~/.claude`). Die IPs in `config.yaml` sind Platzhalter.
 
-## Lizenz
-
-[LICENSE](homelab_dashboard/LICENSE)
