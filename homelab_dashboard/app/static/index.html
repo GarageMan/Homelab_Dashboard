@@ -50,7 +50,7 @@
 <body>
 <header>
   <h1>Homelab Dashboard</h1>
-  <div class="meta"><span id="stamp">…</span></div>
+  <div class="meta"><button id="refresh" title="Jetzt aktualisieren" style="background:var(--card2);border:1px solid var(--line);color:var(--muted);border-radius:8px;cursor:pointer;font-size:14px;line-height:1;padding:3px 9px;margin-right:10px">⟳</button><span id="stamp">…</span></div>
 </header>
 <div class="grid" id="grid"></div>
 
@@ -76,12 +76,18 @@ function generalCard(title,d){
   const temp = d.temp_c!=null?`<div class="row"><span class="k">Temperatur</span><span class="v">${n(d.temp_c,' °C')}</span></div>`:'';
   const net = (d.net_rx!=null)?`<div class="row"><span class="k">Netzwerk</span><span class="v">↓ ${fmtRate(d.net_rx)} · ↑ ${fmtRate(d.net_tx)}</span></div>`:'';
   const load = d.load?`<div class="row"><span class="k">Load</span><span class="v">${d.load.join('  ')}</span></div>`:'';
+  const swap = (d.swap_pct!=null)?`<div class="row"><span class="k">Swap</span><span class="v">${n(d.swap_pct,' %')}</span></div>`:'';
+  const procs = (d.processes!=null)?`<div class="row"><span class="k">Prozesse</span><span class="v">${grp(d.processes)}</span></div>`:'';
+  const kernel = d.kernel?`<div class="row"><span class="k">Kernel</span><span class="v">${d.kernel}</span></div>`:'';
+  const extraFs = (d.filesystems||[]).filter(f=>f.mount!=='/').map(f=>
+      bar('Laufwerk '+f.mount, f.pct, f.total?` · ${fmtBytes(f.used)} / ${fmtBytes(f.total)}`:'')).join('');
   return `<div class="card">
     <h2><span class="dot ok"></span>${title}<span class="sub">${d.os||''}</span></h2>
     ${bar('CPU', d.cpu_pct)}
     ${bar('RAM', d.mem_pct, d.mem_total?` · ${fmtBytes(d.mem_used)} / ${fmtBytes(d.mem_total)}`:'')}
     ${bar('Storage /', d.disk_pct, d.disk_total?` · ${fmtBytes(d.disk_used)} / ${fmtBytes(d.disk_total)}`:'')}
-    ${temp}${net}${load}
+    ${extraFs}
+    ${temp}${net}${load}${swap}${procs}${kernel}
     <div class="row"><span class="k">Uptime</span><span class="v">${d.uptime||'–'}</span></div>
   </div>`;
 }
@@ -93,7 +99,7 @@ function hassCard(d){
     : `<span class="pill ok">aktuell</span>`;
   const ent = d.entities||{};
   const un = ent.unavailable;
-  const unpill = un==null?'':(un>0?`<span class="pill warn">${un} nicht verfügbar</span>`:`<span class="pill ok">alle verfügbar</span>`);
+  const unval = un==null?'–':`<span style="color:${un>0?'var(--warn)':'var(--ok)'}">${un}${ent.total?' / '+grp(ent.total):''}</span>`;
   return `<div class="card">
     <h2><span class="dot ok"></span>Home Assistant (Pi)<span class="sub">${d.os||''}</span></h2>
     ${d.cpu_pct!=null?bar('CPU', d.cpu_pct):''}
@@ -104,15 +110,22 @@ function hassCard(d){
     <div class="row"><span class="k">Updates</span><span class="v">${up}</span></div>
     <div class="hr"></div>
     <div class="row"><span class="k">Entitäten</span><span class="v">${grp(ent.total)} · ${grp(ent.automations)} Automationen</span></div>
-    <div class="row"><span class="k">Gesundheit</span><span class="v">${unpill}</span></div>
+    <div class="row"><span class="k">unavailable/unknown entities</span><span class="v">${unval}</span></div>
     <div class="row"><span class="k">Uptime</span><span class="v">${d.uptime||'–'}</span></div>
   </div>`;
 }
 
-function piholeCard(d){
+function piholeCard(d, hw){
   if(!d||!d.ok) return generalCard('Pi-hole',d);
   const on = d.blocking==='enabled';
   const stat = on?`<span class="pill ok">Aktiv</span>`:`<span class="pill warn">${d.blocking==='disabled'?'Inaktiv':d.blocking}</span>`;
+  const hwBlock = (hw&&hw.ok)?`
+    <div class="hr"></div>
+    ${bar('CPU', hw.cpu_pct)}
+    ${bar('RAM', hw.mem_pct, hw.mem_total?` · ${fmtBytes(hw.mem_used)} / ${fmtBytes(hw.mem_total)}`:'')}
+    ${bar('Storage', hw.disk_pct, hw.disk_total?` · ${fmtBytes(hw.disk_used)} / ${fmtBytes(hw.disk_total)}`:'')}
+    ${hw.temp_c!=null?`<div class="row"><span class="k">Temperatur</span><span class="v">${n(hw.temp_c,' °C')}</span></div>`:''}
+    <div class="row"><span class="k">Uptime</span><span class="v">${hw.uptime||'–'}</span></div>`:'';
   return `<div class="card">
     <h2><span class="dot ${on?'ok':'bad'}"></span>Pi-hole<span class="sub">${d.host}</span></h2>
     <div class="row"><span class="k">Status</span><span class="v">${stat}</span></div>
@@ -123,6 +136,7 @@ function piholeCard(d){
     <div class="row"><span class="k">Aktive Clients</span><span class="v">${grp(d.clients_active)}</span></div>
     ${d.top_blocked?`<div class="row"><span class="k">Top geblockt</span><span class="v">${d.top_blocked}</span></div>`:''}
     ${d.top_client?`<div class="row"><span class="k">Top Client</span><span class="v">${d.top_client}</span></div>`:''}
+    ${hwBlock}
   </div>`;
 }
 
@@ -165,6 +179,19 @@ function usageCard(d){
   </div>`;
 }
 
+function websiteCard(d){
+  if(!d||!d.ok) return '';   // nicht konfiguriert -> keine Kachel
+  const up = d.up;
+  const stat = up?`<span class="pill ok">Online</span>`:`<span class="pill warn">Offline</span>`;
+  const host = (d.url||'').replace(/^https?:\/\//,'');
+  return `<div class="card">
+    <h2><span class="dot ${up?'ok':'bad'}"></span>${d.name||'Webseite'}<span class="sub">${host}</span></h2>
+    <div class="row"><span class="k">Status</span><span class="v">${stat}</span></div>
+    <div class="row"><span class="k">HTTP-Code</span><span class="v">${d.status==null?'–':d.status}</span></div>
+    <div class="row"><span class="k">Antwortzeit</span><span class="v">${d.ms==null?'–':d.ms+' ms'}</span></div>
+  </div>`;
+}
+
 async function tick(){
   try{
     const res = await fetch('api/data',{cache:'no-store'});
@@ -173,14 +200,22 @@ async function tick(){
     g.innerHTML='';
     g.appendChild($(hassCard(d.hass)));
     g.appendChild($(generalCard('Ubuntu-Server', d.ubuntu)));
-    g.appendChild($(piholeCard(d.pihole)));
+    g.appendChild($(piholeCard(d.pihole, d.pihole_hw)));
     g.appendChild($(usageCard(d.usage)));
+    if(d.website && d.website.ok){ g.appendChild($(websiteCard(d.website))); }
     document.getElementById('stamp').textContent =
       'aktualisiert '+new Date(d.ts*1000).toLocaleTimeString('de-DE');
   }catch(e){
     document.getElementById('stamp').textContent='Fehler beim Laden';
   }
 }
+
+document.getElementById('refresh').addEventListener('click', ()=>{
+  const b=document.getElementById('refresh');
+  b.style.transition='transform .5s'; b.style.transform='rotate(360deg)';
+  setTimeout(()=>{b.style.transition='';b.style.transform='';}, 520);
+  tick();
+});
 
 let iv=15000;
 fetch('api/config').then(r=>r.json()).then(c=>{iv=(c.refresh_seconds||15)*1000;}).catch(()=>{});
