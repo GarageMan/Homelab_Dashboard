@@ -32,6 +32,8 @@ def load_options() -> dict:
         "glances_port": int(os.getenv("GLANCES_PORT", opts.get("glances_port", 61208))),
         "pihole_password": os.getenv("PIHOLE_PASSWORD", opts.get("pihole_password", "")),
         "usage_url": os.getenv("USAGE_URL", opts.get("usage_url", "")),
+        "website_url": os.getenv("WEBSITE_URL", opts.get("website_url", "")),
+        "website_name": os.getenv("WEBSITE_NAME", opts.get("website_name", "Webseite")),
         "refresh_seconds": int(os.getenv("REFRESH_SECONDS", opts.get("refresh_seconds", 15))),
     }
 
@@ -43,9 +45,9 @@ MOCK = os.getenv("HOMELAB_MOCK") == "1"
 
 # Systemmonitor-Entities des HASS-Pi (bei Bedarf hier anpassen)
 HA_SENSORS = {
-    "cpu":  "sensor.system_monitor_prozessornutzung",
+    "cpu": "sensor.system_monitor_prozessornutzung",
     "temp": "sensor.system_monitor_prozessortemperatur",
-    "mem":  "sensor.system_monitor_arbeitsspeicherauslastung",
+    "mem": "sensor.system_monitor_arbeitsspeicherauslastung",
     "disk": "sensor.disk_use_percent",
 }
 
@@ -128,21 +130,40 @@ async def collect_glances(client: httpx.AsyncClient, host: str, port: int, label
 
     osname = system.get("linux_distro") or system.get("os_name") or system.get("hr_name") or "?"
 
+    # v1.1: Kernel, Prozesse, Swap, weitere Dateisysteme
+    kernel = system.get("os_version") or system.get("platform")
+    procs = (d.get("processcount", {}) or {}).get("total")
+    swap = d.get("memswap", {}) or {}
+    fslist = []
+    for fs in d.get("fs", []) or []:
+        mp = str(fs.get("mnt_point", ""))
+        ft = str(fs.get("fs_type", "")).lower()
+        if ft in ("tmpfs", "devtmpfs", "overlay", "squashfs", "") \
+                or mp.startswith(("/boot", "/dev", "/sys", "/proc", "/run", "/snap")):
+            continue
+        fslist.append({"mount": mp, "pct": round(_num(fs.get("percent")), 1),
+                       "used": _num(fs.get("used")), "total": _num(fs.get("size"))})
+    fslist.sort(key=lambda x: x["total"], reverse=True)
+
     return {
         "ok": True,
         "label": label,
         "host": host,
         "hostname": system.get("hostname", host),
         "os": osname,
+        "kernel": kernel,
         "uptime": up_str,
         "cpu_pct": round(_num(cpu.get("total")), 1),
         "temp_c": round(temp, 1) if temp is not None else None,
         "mem_pct": round(_num(mem.get("percent")), 1),
         "mem_used": _num(mem.get("used")),
         "mem_total": _num(mem.get("total")),
+        "swap_pct": round(_num(swap.get("percent")), 1) if swap else None,
         "disk_pct": round(_num(root.get("percent")), 1),
         "disk_used": _num(root.get("used")),
         "disk_total": _num(root.get("size")),
+        "filesystems": fslist[:4],
+        "processes": int(procs) if procs is not None else None,
         "load": [round(_num(load.get("min1")), 2), round(_num(load.get("min5")), 2),
                  round(_num(load.get("min15")), 2)],
         "net_rx": rx,
@@ -299,8 +320,8 @@ async def collect_hass(client: httpx.AsyncClient) -> dict:
             "disk_pct": live.get("disk") if "disk" in live else (
                 round(_num(host.get("disk_used")) / _num(host.get("disk_total"), 1) * 100, 1)
                 if host.get("disk_total") else None),
-            "disk_used": _num(host.get("disk_used")),
-            "disk_total": _num(host.get("disk_total")),
+            "disk_used": _num(host.get("disk_used")) * 1024**3,
+            "disk_total": _num(host.get("disk_total")) * 1024**3,
             "entities": ent,
         }
     except Exception as e:
@@ -319,6 +340,24 @@ async def collect_usage(client: httpx.AsyncClient, url: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+# ------------------------------------------------ Collector: Webseite ---------
+async def collect_website(url: str, name: str) -> dict:
+    """HTTP-Statuscheck einer Webseite: online/offline, HTTP-Code, Antwortzeit."""
+    if not url:
+        return {"ok": False, "error": "keine website_url gesetzt"}
+    t0 = time.perf_counter()
+    try:
+        # verify=False: lokale/selbstsignierte Seiten sollen den Check nicht scheitern lassen
+        async with httpx.AsyncClient(verify=False, follow_redirects=True) as c:
+            r = await c.get(url, timeout=6.0)
+        ms = round((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "name": name, "url": url,
+                "up": 200 <= r.status_code < 400, "status": r.status_code, "ms": ms}
+    except Exception as e:
+        return {"ok": True, "name": name, "url": url,
+                "up": False, "status": None, "ms": None, "error": str(e)}
+
+
 # ------------------------------------------------------------ Mock ------------
 def _mock():
     now = time.time()
@@ -330,15 +369,26 @@ def _mock():
                  "disk_pct": 38.0, "disk_used": 12e9, "disk_total": 31e9,
                  "entities": {"total": 412, "automations": 37, "unavailable": 3}},
         "ubuntu": {"ok": True, "label": "Ubuntu-Server", "host": "192.168.1.75",
-                   "hostname": "ubuntu-srv", "os": "Ubuntu 24.04.4 LTS", "uptime": "21 T 6 Std 4 Min",
-                   "cpu_pct": 22.5, "temp_c": 51.0, "mem_pct": 63.0, "mem_used": 10.1e9,
-                   "mem_total": 16e9, "disk_pct": 71.0, "disk_used": 1.4e12, "disk_total": 2e12,
+                   "hostname": "ubuntu-srv", "os": "Ubuntu 24.04.4 LTS", "kernel": "6.8.0-40-generic",
+                   "uptime": "21 T 6 Std 4 Min", "cpu_pct": 22.5, "temp_c": 51.0, "mem_pct": 63.0,
+                   "mem_used": 10.1e9, "mem_total": 16e9, "swap_pct": 8.0, "disk_pct": 71.0,
+                   "disk_used": 1.4e12, "disk_total": 2e12, "processes": 214,
+                   "filesystems": [{"mount": "/", "pct": 71.0, "used": 1.4e12, "total": 2e12},
+                                   {"mount": "/srv/fileserver", "pct": 46.0, "used": 3.7e12, "total": 8e12}],
                    "load": [1.45, 1.23, 0.98], "net_rx": 5.8e6, "net_tx": 1.2e6},
         "pihole": {"ok": True, "host": "192.168.1.5", "blocking": "enabled", "queries": 93157,
                    "blocked": 18342, "percent": 19.7, "gravity": 151284, "clients_active": 12,
                    "top_blocked": "graph.facebook.com", "top_client": "192.168.1.31"},
+        "pihole_hw": {"ok": True, "label": "Pi-hole", "host": "192.168.1.5", "os": "Raspbian 11",
+                      "kernel": "6.1.21-v8+", "uptime": "44 T 2 Std 9 Min", "cpu_pct": 3.5,
+                      "temp_c": 47.2, "mem_pct": 18.7, "mem_used": 0.17e9, "mem_total": 0.92e9,
+                      "swap_pct": 0.0, "disk_pct": 22.0, "disk_used": 6.4e9, "disk_total": 29e9,
+                      "filesystems": [], "processes": 118, "load": [0.12, 0.15, 0.10],
+                      "net_rx": 0.4e6, "net_tx": 0.3e6},
         "usage": {"ok": True, "session_pct": 61, "session_reset": now + 13440,
                   "weekly_pct": 11, "weekly_reset": now + 266400, "plan": "Max"},
+        "website": {"ok": True, "name": "LaMetric-Uhr", "url": "http://192.168.1.7",
+                    "up": True, "status": 200, "ms": 34},
         "ts": now,
     }
 
@@ -349,14 +399,17 @@ async def api_data():
     if MOCK:
         return JSONResponse(_mock())
     async with httpx.AsyncClient() as client:
-        hass, ubuntu, pihole, usage = await asyncio.gather(
+        hass, ubuntu, pihole, pihole_hw, usage, website = await asyncio.gather(
             collect_hass(client),
             collect_glances(client, OPT["ubuntu_host"], OPT["glances_port"], "Ubuntu-Server"),
             collect_pihole(client, OPT["pihole_host"], OPT["pihole_password"]),
+            collect_glances(client, OPT["pihole_host"], OPT["glances_port"], "Pi-hole"),
             collect_usage(client, OPT["usage_url"]),
+            collect_website(OPT["website_url"], OPT["website_name"]),
         )
     return JSONResponse({"hass": hass, "ubuntu": ubuntu, "pihole": pihole,
-                         "usage": usage, "ts": time.time()})
+                         "pihole_hw": pihole_hw, "usage": usage, "website": website,
+                         "ts": time.time()})
 
 
 @app.get("/api/config")
