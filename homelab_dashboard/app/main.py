@@ -380,6 +380,21 @@ SYNOLOGY_SESSION_ERROR_CODES = (105, 106, 107, 119)  # ungueltige/abgelaufene Se
 _syno_sid: dict = {"sid": None, "synotoken": None}
 _syno_lock = asyncio.Lock()
 _syno_folder_cache: dict = {"ok": False, "scanned_at": None, "top": [], "error": "noch nicht gescannt"}
+_syno_last_error: str | None = None
+
+# https://kb.synology.com/en-global/DSM/tutorial/What_is_HTTP_status_code_in_DSM_help
+SYNOLOGY_AUTH_ERROR_TEXT = {
+    400: "Benutzername oder Passwort falsch",
+    401: "Konto deaktiviert",
+    402: "Zugriff verweigert (Berechtigung fehlt, z. B. Anwendung 'DSM' nicht erlaubt)",
+    403: "2FA-Code erforderlich",
+    404: "2FA-Code falsch",
+    406: "2FA ist fuer dieses Konto erzwungen, aber nicht eingerichtet",
+    407: "Quell-IP von DSM blockiert (Systemsteuerung -> Sicherheit -> Schutz)",
+    408: "Passwort abgelaufen und muss geaendert werden",
+    409: "Passwort muss geaendert werden",
+    410: "Passwort muss geaendert werden (erzwungen)",
+}
 
 
 def _syno_base(opt: dict) -> str:
@@ -390,6 +405,7 @@ def _syno_base(opt: dict) -> str:
 async def _syno_login(client: httpx.AsyncClient, opt: dict) -> dict | None:
     """Login mit Benutzer/Passwort + gemerkter device_id (kein OTP noetig, solange
     das Geraet in DSM als vertrauenswuerdig hinterlegt ist)."""
+    global _syno_last_error
     params = {
         "api": "SYNO.API.Auth", "version": "6", "method": "login",
         "account": opt["synology_user"], "passwd": opt["synology_password"],
@@ -398,15 +414,21 @@ async def _syno_login(client: httpx.AsyncClient, opt: dict) -> dict | None:
     }
     if opt.get("synology_device_id"):
         params["device_id"] = opt["synology_device_id"]
+    url = f"{_syno_base(opt)}/entry.cgi"
     try:
-        r = await client.get(f"{_syno_base(opt)}/entry.cgi", params=params, timeout=8.0)
+        r = await client.get(url, params=params, timeout=8.0)
         r.raise_for_status()
         d = r.json()
-    except Exception:
+    except Exception as e:
+        _syno_last_error = f"Verbindung zu {url} fehlgeschlagen: {type(e).__name__}: {e}"
         return None
     if not d.get("success"):
+        code = (d.get("error") or {}).get("code")
+        text = SYNOLOGY_AUTH_ERROR_TEXT.get(code, "unbekannt")
+        _syno_last_error = f"DSM-Login abgelehnt (Code {code}: {text})"
         return None
     data = d.get("data", {}) or {}
+    _syno_last_error = None
     return {"sid": data.get("sid"), "synotoken": data.get("synotoken")}
 
 
@@ -426,7 +448,8 @@ async def _syno_get(client: httpx.AsyncClient, opt: dict, api: str, version: int
         if not _syno_sid.get("sid"):
             _syno_sid.update(await _syno_login(client, opt) or {"sid": None})
     if not _syno_sid.get("sid"):
-        raise RuntimeError("Synology-Login fehlgeschlagen (Benutzer/Passwort/device_id pruefen)")
+        detail = _syno_last_error or "unbekannter Fehler"
+        raise RuntimeError(f"Synology-Login fehlgeschlagen: {detail}")
 
     d = await _call(_syno_sid["sid"], _syno_sid.get("synotoken"))
     if not d.get("success"):

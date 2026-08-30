@@ -1,5 +1,5 @@
 name: Homelab Dashboard
-version: "1.2.0"
+version: "1.2.1"
 slug: homelab_dashboard
 description: >-
   Konsolidiertes Dashboard fuer HASS-Pi, Ubuntu-Server, Pi-hole und Synology

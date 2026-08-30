@@ -430,6 +430,11 @@ Rebuild nötig.
 
 ## Versionshinweise
 
+- **1.2.1** — Die Synology-Kachel zeigt bei Verbindungs-/Login-Problemen jetzt den
+  tatsächlichen Grund an (z. B. Verbindungsfehler zu Host/Port, oder den
+  konkreten DSM-Fehlercode samt Klartext wie „Zugriff verweigert" oder
+  „Quell-IP blockiert") statt einer generischen Meldung – hilfreich zur
+  Fehlersuche bei Netzwerk-/Firewall-/Berechtigungsproblemen.
 - **1.2.0** — Neue Synology-DiskStation-Kachel: CPU/RAM/Netzwerk/Temperatur/Volumes,
   Top-CPU-Prozesse, angemeldete Benutzer, plus ein alle 6 h laufender
   Hintergrund-Scan der größten Ordner je Freigabe (2 Ebenen tief, ähnlich
