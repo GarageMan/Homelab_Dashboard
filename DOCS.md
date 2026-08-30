@@ -17,6 +17,7 @@ In dieser Anleitung stehen **Platzhalter** statt echter IP-Adressen. Ersetze sie
 | `IP-Homeassistant` | der HAOS-Raspberry-Pi (auf dem das Add-on läuft)      |
 | `IP-Ubuntu-FS`     | der Ubuntu-Server (Fileserver / DayZ / Kleinigkeiten) |
 | `IP-Pi-Hole`       | der Pi-hole-Server                                    |
+| `IP-Synology`      | deine Synology DiskStation                            |
 | `<benutzer>`       | dein Linux-Benutzername auf dem jeweiligen Server     |
 
 Beispiel: Steht in der Anleitung `http://IP-Ubuntu-FS:61208`, trägst du die echte
@@ -32,6 +33,7 @@ Adresse deines Ubuntu-Servers ein.
 | Ubuntu-Server         | Glances-REST-API (Port 61208) | —                          |
 | Pi-hole               | Glances-REST-API (Port 61208) | Pi-hole-v6-API (Queries, Blocking …) |
 | Claude Usage          | Exporter auf dem Ubuntu-Server (Port 8787) | Session-/Weekly-Auslastung |
+| Synology DiskStation  | DSM-Web-API direkt (Port 5001, https) | CPU/RAM/Netz/Temp/Volumes, Top-Prozesse, angemeldete Benutzer, größte Ordner (Hintergrund-Scan) |
 
 Ein FastAPI-Aggregator im Add-on fragt alle Quellen parallel und gekapselt ab;
 fällt eine aus, zeigt nur ihre Kachel „nicht erreichbar", das Board bleibt stehen.
@@ -303,7 +305,85 @@ Add-on **Aktualisieren** → **Starten**.
 
 ---
 
-## 5. Konfigurationsoptionen
+## 5. Synology DiskStation (optional)
+
+Zeigt CPU, RAM, Netzwerk, Temperatur, Volumes, die CPU-hungrigsten Prozesse und
+angemeldete Benutzer der DiskStation — plus, alle 6 Stunden im Hintergrund neu
+berechnet, die größten Ordner je Freigabe (2 Ebenen tief), ähnlich TreeSize.
+Läuft komplett über die eingebaute DSM-Web-API, es muss nichts auf der
+DiskStation installiert werden.
+
+### 5a. Eigenen Benutzer in DSM anlegen
+
+Die von DSM benötigten System-APIs (CPU/RAM/Storage/Prozesse) verlangen laut
+Synologys eigener Dokumentation zwingend einen Benutzer aus der Gruppe
+**„administrators"** — das lässt sich aber überall sonst einschränken:
+
+1. **Systemsteuerung → Benutzer & Gruppe → Erstellen** → z. B. `dashboard-api`,
+   eigenes Passwort, Gruppe **administrators**
+2. Reiter **Anwendungen**: Zugriff auf **alles verweigern**, außer **File
+   Station** (nur nötig für die Ordnergrößen-Funktion — ohne die reicht auch
+   „alles verweigern")
+3. Reiter **Freigabeordner**: pro Freigabe nur **Lesen**, nirgends **Schreiben**
+4. Ist auf der DiskStation eine **2-Stufen-Verifizierung** für Administratoren
+   erzwungen, greift sie auch für diesen Benutzer — weiter mit 5b.
+
+### 5b. Einmalig: Geräte-Token für 2FA erzeugen
+
+Nur nötig, wenn 2FA für Administratoren erzwungen ist. DSM kann ein Gerät
+dauerhaft als vertrauenswürdig merken, sodass künftige Logins ganz ohne
+OTP-Code auskommen. Von einem Rechner im selben LAN, mit dem **aktuellen**
+6-stelligen OTP-Code aus der Authenticator-App:
+
+```bash
+curl -sk "https://IP-Synology:5001/webapi/entry.cgi?api=SYNO.API.Auth&version=6&method=login\
+&account=dashboard-api&passwd=DEIN-PASSWORT&otp_code=123456\
+&enable_device_token=yes&device_name=homelab-dashboard"
+```
+
+In der Antwort steht `"did":"..."` — dieser Wert ist die `device_id`. Kopieren
+und im nächsten Schritt in die Add-on-Option `synology_device_id` eintragen.
+Ab dann meldet sich das Dashboard mit Benutzer/Passwort + `device_id` an, ohne
+je wieder nach einem OTP-Code zu fragen (bis du das Gerät in DSM unter
+**Systemsteuerung → Benutzer & Gruppe → [Benutzer] → Geräteverwaltung**
+wieder entfernst).
+
+### 5c. Add-on-Optionen setzen
+
+Im Reiter **Konfiguration** des Add-ons:
+
+```yaml
+synology_host: IP-Synology
+synology_port: 5001
+synology_https: true
+synology_user: dashboard-api
+synology_password: "DEIN-PASSWORT"
+synology_device_id: "DIE-DID-AUS-5b"      # leer lassen, falls kein 2FA erzwungen
+```
+
+Ist `synology_host` leer, blendet sich die Kachel komplett aus.
+
+### 5d. Funktionstest
+
+```bash
+curl -sk "https://IP-Synology:5001/webapi/entry.cgi?api=SYNO.Core.System.Utilization&version=1&method=get&_sid=DEINE_SID"
+```
+
+(`_sid` aus der Antwort von 5b/Login.) Kommt eine plausible JSON-Antwort mit
+`cpu`/`memory`/`network` zurück, stimmen Host/Port/Zugangsdaten. Bricht die
+Kachel im Dashboard trotzdem mit „nicht erreichbar" ab, im Add-on-Protokoll
+nachsehen — die Fehlermeldung enthält die betroffene API und den DSM-Fehlercode.
+
+> **Hinweis:** Die JSON-Feldnamen der DSM-API (z. B. `sys_temp`, `real_usage`)
+> können sich zwischen DSM-Versionen leicht unterscheiden. Zeigt eine einzelne
+> Zeile dauerhaft „–" statt eines Werts, obwohl die Kachel grundsätzlich lädt,
+> curl testweise gegen die jeweilige API laufen lassen (wie oben) und die
+> tatsächlichen Feldnamen mit denen in `collect_synology()` in `app/main.py`
+> abgleichen.
+
+---
+
+## 6. Konfigurationsoptionen
 
 | Option            | Bedeutung                                         | Beispiel                       |
 |-------------------|---------------------------------------------------|--------------------------------|
@@ -315,13 +395,19 @@ Add-on **Aktualisieren** → **Starten**.
 | `website_url`     | URL für den Webseiten-Status (leer = Kachel aus)  | `http://IP-Homeassistant`      |
 | `website_name`    | Anzeigename der Webseiten-Kachel                  | `Meine Webseite`               |
 | `refresh_seconds` | Aktualisierungsintervall des Dashboards (5–120 s) | `15`                           |
+| `synology_host`   | Adresse der DiskStation (leer = Kachel aus)       | `IP-Synology`                  |
+| `synology_port`   | DSM-Port                                          | `5001`                         |
+| `synology_https`  | DSM per HTTPS ansprechen                          | `true`                         |
+| `synology_user`   | dedizierter API-Benutzer (Abschnitt 5a)           | `dashboard-api`                |
+| `synology_password` | Passwort dieses Benutzers                       | `••••••`                       |
+| `synology_device_id` | Geräte-Token bei erzwungenem 2FA (Abschnitt 5b) | leer, falls kein 2FA           |
 
 Alle Werte lassen sich jederzeit im Reiter **Konfiguration** ändern — kein
 Rebuild nötig.
 
 ---
 
-## 6. Fehlersuche
+## 7. Fehlersuche
 
 | Symptom | Ursache / Lösung |
 |---|---|
@@ -334,11 +420,21 @@ Rebuild nötig.
 | Claude Usage „nicht erreichbar" | Exporter-Dienst läuft? `systemctl status claude-usage-exporter` |
 | Claude Usage `HTTP 401 … expired` | setup-token abgelaufen (~1 Jahr) → Routine `Claude-Usage-Token-erneuern.md` |
 | Webseiten-Kachel fehlt | `website_url` ist leer — sobald gesetzt, erscheint die Kachel |
+| Synology-Kachel fehlt | `synology_host` ist leer — sobald gesetzt, erscheint die Kachel |
+| Synology „Login fehlgeschlagen" | Benutzer/Passwort falsch, oder 2FA erzwungen ohne gültige `synology_device_id` (Abschnitt 5b) |
+| Synology-API-Fehler Code 105/106/107/119 | Session abgelaufen — wird beim nächsten Poll automatisch neu eingeloggt; bleibt es bestehen, `synology_password`/`synology_device_id` prüfen |
+| Synology „Größte Ordner": kein Scan | Läuft erst 6 h nach Add-on-Start und braucht `synology_user` mit File-Station-Zugriff (Abschnitt 5a) |
+| Einzelne Synology-Zeile zeigt „–" | DSM-JSON-Feldname weicht ab — siehe Hinweis in Abschnitt 5d |
 
 ---
 
 ## Versionshinweise
 
+- **1.2.0** — Neue Synology-DiskStation-Kachel: CPU/RAM/Netzwerk/Temperatur/Volumes,
+  Top-CPU-Prozesse, angemeldete Benutzer, plus ein alle 6 h laufender
+  Hintergrund-Scan der größten Ordner je Freigabe (2 Ebenen tief, ähnlich
+  TreeSize). Konfiguration über `synology_*`-Add-on-Optionen, Login über die
+  DSM-Web-API inkl. optionalem Geräte-Token für erzwungenes 2FA.
 - **1.1.1** — Webseiten-Status-Kachel (Online/Offline, HTTP-Code, Antwortzeit) über
   `website_url`/`website_name`.
 - **1.1.0** — Pi-hole-Kachel zeigt zusätzlich die Hardware des Pi-hole-Raspi
