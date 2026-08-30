@@ -1,9 +1,10 @@
 name: Homelab Dashboard
-version: "1.1.1"
+version: "1.2.0"
 slug: homelab_dashboard
 description: >-
-  Konsolidiertes Dashboard fuer HASS-Pi, Ubuntu-Server und Pi-hole
-  (CPU, Temp, RAM, Storage, Netzwerk, Updates, Pi-hole-Stats, Claude-Usage).
+  Konsolidiertes Dashboard fuer HASS-Pi, Ubuntu-Server, Pi-hole und Synology
+  DiskStation (CPU, Temp, RAM, Storage, Netzwerk, Updates, Pi-hole-Stats,
+  Claude-Usage, Synology-Prozesse/-Benutzer/-Ordnergroessen).
 url: "https://local/homelab-dashboard"
 arch:
   - aarch64
@@ -24,6 +25,12 @@ options:
   refresh_seconds: 15
   website_url: ""
   website_name: "Webseite"
+  synology_host: ""
+  synology_port: 5001
+  synology_https: true
+  synology_user: ""
+  synology_password: ""
+  synology_device_id: ""
 schema:
   ubuntu_host: str
   pihole_host: str
@@ -33,3 +40,9 @@ schema:
   refresh_seconds: int(5,120)
   website_url: str?
   website_name: str?
+  synology_host: str?
+  synology_port: port?
+  synology_https: bool?
+  synology_user: str?
+  synology_password: password?
+  synology_device_id: str?

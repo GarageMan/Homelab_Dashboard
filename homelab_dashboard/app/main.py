@@ -35,6 +35,13 @@ def load_options() -> dict:
         "website_url": os.getenv("WEBSITE_URL", opts.get("website_url", "")),
         "website_name": os.getenv("WEBSITE_NAME", opts.get("website_name", "Webseite")),
         "refresh_seconds": int(os.getenv("REFRESH_SECONDS", opts.get("refresh_seconds", 15))),
+        "synology_host": os.getenv("SYNOLOGY_HOST", opts.get("synology_host", "")),
+        "synology_port": int(os.getenv("SYNOLOGY_PORT", opts.get("synology_port", 5001))),
+        "synology_https": str(os.getenv("SYNOLOGY_HTTPS", opts.get("synology_https", True))).lower()
+                          not in ("0", "false", "no"),
+        "synology_user": os.getenv("SYNOLOGY_USER", opts.get("synology_user", "")),
+        "synology_password": os.getenv("SYNOLOGY_PASSWORD", opts.get("synology_password", "")),
+        "synology_device_id": os.getenv("SYNOLOGY_DEVICE_ID", opts.get("synology_device_id", "")),
     }
 
 
@@ -358,6 +365,233 @@ async def collect_website(url: str, name: str) -> dict:
                 "up": False, "status": None, "ms": None, "error": str(e)}
 
 
+# --------------------------------------------------- Collector: Synology DSM --
+# DSM-Web-API: Login liefert eine Session-ID (sid). Ist 2FA erzwungen, muss der
+# Benutzer einmalig ausserhalb dieses Codes per OTP + enable_device_token=yes
+# freigeschaltet werden (siehe DOCS.md) - das Ergebnis ist eine device_id, die
+# hier als synology_device_id dauerhaft eingetragen wird und OTP kuenftig erspart.
+SYNOLOGY_DEVICE_NAME = "homelab-dashboard"
+SYNOLOGY_FOLDERSCAN_SECONDS = 6 * 3600
+SYNOLOGY_FOLDERSCAN_MAX_SHARES = 8
+SYNOLOGY_FOLDERSCAN_MAX_SUBFOLDERS = 25
+SYNOLOGY_FOLDERSCAN_TOP_N = 12
+SYNOLOGY_SESSION_ERROR_CODES = (105, 106, 107, 119)  # ungueltige/abgelaufene Session
+
+_syno_sid: dict = {"sid": None, "synotoken": None}
+_syno_lock = asyncio.Lock()
+_syno_folder_cache: dict = {"ok": False, "scanned_at": None, "top": [], "error": "noch nicht gescannt"}
+
+
+def _syno_base(opt: dict) -> str:
+    scheme = "https" if opt.get("synology_https", True) else "http"
+    return f"{scheme}://{opt['synology_host']}:{opt['synology_port']}/webapi"
+
+
+async def _syno_login(client: httpx.AsyncClient, opt: dict) -> dict | None:
+    """Login mit Benutzer/Passwort + gemerkter device_id (kein OTP noetig, solange
+    das Geraet in DSM als vertrauenswuerdig hinterlegt ist)."""
+    params = {
+        "api": "SYNO.API.Auth", "version": "6", "method": "login",
+        "account": opt["synology_user"], "passwd": opt["synology_password"],
+        "session": "homelab_dashboard", "format": "sid",
+        "device_name": SYNOLOGY_DEVICE_NAME,
+    }
+    if opt.get("synology_device_id"):
+        params["device_id"] = opt["synology_device_id"]
+    try:
+        r = await client.get(f"{_syno_base(opt)}/entry.cgi", params=params, timeout=8.0)
+        r.raise_for_status()
+        d = r.json()
+    except Exception:
+        return None
+    if not d.get("success"):
+        return None
+    data = d.get("data", {}) or {}
+    return {"sid": data.get("sid"), "synotoken": data.get("synotoken")}
+
+
+async def _syno_get(client: httpx.AsyncClient, opt: dict, api: str, version: int,
+                     method: str, extra: dict | None = None) -> dict:
+    """Ruft eine DSM-Web-API auf; loggt bei Bedarf (erneut) ein. Wirft bei Fehlern."""
+    async def _call(sid, token):
+        params = {"api": api, "version": str(version), "method": method, "_sid": sid}
+        if extra:
+            params.update(extra)
+        headers = {"X-SYNO-TOKEN": token} if token else {}
+        r = await client.get(f"{_syno_base(opt)}/entry.cgi", params=params, headers=headers, timeout=10.0)
+        r.raise_for_status()
+        return r.json()
+
+    async with _syno_lock:
+        if not _syno_sid.get("sid"):
+            _syno_sid.update(await _syno_login(client, opt) or {"sid": None})
+    if not _syno_sid.get("sid"):
+        raise RuntimeError("Synology-Login fehlgeschlagen (Benutzer/Passwort/device_id pruefen)")
+
+    d = await _call(_syno_sid["sid"], _syno_sid.get("synotoken"))
+    if not d.get("success"):
+        code = (d.get("error") or {}).get("code")
+        if code in SYNOLOGY_SESSION_ERROR_CODES:
+            async with _syno_lock:
+                _syno_sid.update(await _syno_login(client, opt) or {"sid": None})
+            if _syno_sid.get("sid"):
+                d = await _call(_syno_sid["sid"], _syno_sid.get("synotoken"))
+        if not d.get("success"):
+            code = (d.get("error") or {}).get("code")
+            raise RuntimeError(f"Synology-API-Fehler {api}.{method}: Code {code}")
+    return d.get("data", {}) or {}
+
+
+async def collect_synology(client: httpx.AsyncClient, opt: dict) -> dict:
+    host = opt.get("synology_host")
+    if not host or not opt.get("synology_user"):
+        return {"ok": False, "error": "kein synology_host/synology_user gesetzt"}
+    try:
+        util, sysinfo, storage, procs, conns = await asyncio.gather(
+            _syno_get(client, opt, "SYNO.Core.System.Utilization", 1, "get"),
+            _syno_get(client, opt, "SYNO.Core.System", 1, "info", {"type": "storage"}),
+            _syno_get(client, opt, "SYNO.Storage.CGI.Storage", 1, "load_info"),
+            _syno_get(client, opt, "SYNO.Core.System.Process", 1, "list", {"additional": '["cpu","mem"]'}),
+            _syno_get(client, opt, "SYNO.Core.CurrentConnection", 1, "list", {"offset": 0, "limit": 30}),
+        )
+    except Exception as e:
+        return {"ok": False, "host": host, "error": str(e)}
+
+    cpu = util.get("cpu", {}) or {}
+    cpu_pct = None
+    if cpu:
+        cpu_pct = round(_num(cpu.get("user_load")) + _num(cpu.get("system_load"))
+                        + _num(cpu.get("nice_load")), 1)
+
+    mem = util.get("memory", {}) or {}
+    mem_pct = round(_num(mem.get("real_usage") or mem.get("memory_usage")), 1) if mem else None
+
+    net_list = util.get("network", []) or []
+    rx = sum(_num(x.get("rx")) for x in net_list if str(x.get("device", "")).lower() not in ("total", ""))
+    tx = sum(_num(x.get("tx")) for x in net_list if str(x.get("device", "")).lower() not in ("total", ""))
+
+    volumes = []
+    for v in (storage.get("volumes") or []):
+        total = _num(v.get("total_size"))
+        used = _num(v.get("used_size"))
+        volumes.append({
+            "id": v.get("id") or v.get("volume_path") or v.get("desc") or "?",
+            "status": v.get("status", "unknown"),
+            "used": used, "total": total,
+            "pct": round(used / total * 100, 1) if total else None,
+        })
+
+    proc_list = []
+    for p in sorted(procs.get("processes") or [],
+                    key=lambda p: _num((p.get("additional") or {}).get("cpu")), reverse=True)[:6]:
+        add = p.get("additional") or {}
+        proc_list.append({"name": p.get("name") or "?", "cpu": round(_num(add.get("cpu")), 1)})
+
+    users = []
+    for c in (conns.get("items") or conns.get("connection") or []):
+        users.append({
+            "user": c.get("account") or c.get("user") or "?",
+            "ip": c.get("address") or c.get("ip") or "",
+            "proto": (c.get("type") or c.get("protocol") or "").upper(),
+        })
+
+    sys_temp = sysinfo.get("sys_temp")
+    up_time = sysinfo.get("up_time")
+    return {
+        "ok": True,
+        "host": host,
+        "model": sysinfo.get("model"),
+        "temp_c": round(_num(sys_temp), 1) if sys_temp not in (None, "") else None,
+        "uptime": _fmt_uptime(_num(up_time)) if up_time else None,
+        "cpu_pct": cpu_pct,
+        "mem_pct": mem_pct,
+        "net_rx": rx, "net_tx": tx,
+        "volumes": volumes,
+        "processes": proc_list,
+        "users": users,
+    }
+
+
+# --------------------------------- Hintergrund-Job: groesste Ordner (TreeSize) -
+async def _syno_list_shares(client: httpx.AsyncClient, opt: dict) -> list:
+    d = await _syno_get(client, opt, "SYNO.FileStation.List", 2, "list_share", {"additional": "[]"})
+    return [s for s in (d.get("shares") or []) if s.get("isdir")]
+
+
+async def _syno_list_subfolders(client: httpx.AsyncClient, opt: dict, path: str) -> list:
+    try:
+        d = await _syno_get(client, opt, "SYNO.FileStation.List", 2, "list",
+                            {"folder_path": path, "filetype": "dir", "additional": "[]"})
+        return [f["path"] for f in (d.get("files") or []) if f.get("isdir")]
+    except Exception:
+        return []
+
+
+async def _syno_dirsize(client: httpx.AsyncClient, opt: dict, path: str) -> float | None:
+    """Startet SYNO.FileStation.DirSize fuer einen Ordner und wartet auf das Ergebnis
+    (asynchroner DSM-Job, kann bei sehr grossen Ordnern eine Weile dauern)."""
+    try:
+        start = await _syno_get(client, opt, "SYNO.FileStation.DirSize", 2, "start",
+                                {"path": json.dumps([path])})
+        taskid = start.get("taskid")
+        if not taskid:
+            return None
+        for _ in range(45):  # bis zu ~90s warten, alle 2s pollen
+            await asyncio.sleep(2)
+            st = await _syno_get(client, opt, "SYNO.FileStation.DirSize", 2, "status", {"taskid": taskid})
+            if st.get("finished"):
+                size = _num(st.get("total_size"), None)
+                try:
+                    await _syno_get(client, opt, "SYNO.FileStation.DirSize", 2, "stop", {"taskid": taskid})
+                except Exception:
+                    pass
+                return size
+        return None  # Timeout -> Ordner wird beim naechsten Scan erneut versucht
+    except Exception:
+        return None
+
+
+async def _syno_scan_folders_once(opt: dict) -> None:
+    if not opt.get("synology_host") or not opt.get("synology_user"):
+        return
+    async with httpx.AsyncClient(verify=False) as client:
+        try:
+            shares = (await _syno_list_shares(client, opt))[:SYNOLOGY_FOLDERSCAN_MAX_SHARES]
+            entries: list[dict] = []
+            sem = asyncio.Semaphore(3)
+
+            async def size_of(path: str, label: str):
+                async with sem:
+                    s = await _syno_dirsize(client, opt, path)
+                if s is not None:
+                    entries.append({"path": path, "label": label, "size": s})
+
+            # Ebene 1: die Freigaben selbst
+            await asyncio.gather(*[size_of(sh["path"], sh["name"]) for sh in shares])
+
+            # Ebene 2: direkte Unterordner jeder Freigabe
+            level2 = []
+            for sh in shares:
+                subs = (await _syno_list_subfolders(client, opt, sh["path"]))[:SYNOLOGY_FOLDERSCAN_MAX_SUBFOLDERS]
+                level2 += [(p, p.rsplit("/", 1)[-1]) for p in subs]
+            await asyncio.gather(*[size_of(p, label) for p, label in level2])
+
+            entries.sort(key=lambda e: e["size"], reverse=True)
+            _syno_folder_cache.update({"ok": True, "error": None, "scanned_at": time.time(),
+                                       "top": entries[:SYNOLOGY_FOLDERSCAN_TOP_N]})
+        except Exception as e:
+            _syno_folder_cache.update({"ok": False, "error": str(e), "scanned_at": time.time()})
+
+
+async def _syno_folder_scan_loop() -> None:
+    while True:
+        try:
+            await _syno_scan_folders_once(OPT)
+        except Exception:
+            pass
+        await asyncio.sleep(SYNOLOGY_FOLDERSCAN_SECONDS)
+
+
 # ------------------------------------------------------------ Mock ------------
 def _mock():
     now = time.time()
@@ -389,8 +623,30 @@ def _mock():
                   "weekly_pct": 11, "weekly_reset": now + 266400, "plan": "Max"},
         "website": {"ok": True, "name": "LaMetric-Uhr", "url": "http://192.168.1.7",
                     "up": True, "status": 200, "ms": 34},
+        "synology": {"ok": True, "host": "192.168.178.25", "model": "DS920+",
+                     "temp_c": 41.0, "uptime": "12 T 4 Std 30 Min", "cpu_pct": 7.5, "mem_pct": 68.0,
+                     "net_rx": 1.4e6, "net_tx": 0.3e6,
+                     "volumes": [{"id": "Volume 1", "status": "normal", "used": 2e12,
+                                 "total": 2.7e12, "pct": 74.1}],
+                     "processes": [{"name": "synoscgi", "cpu": 4.2}, {"name": "smbd", "cpu": 2.1},
+                                   {"name": "python3", "cpu": 1.5}, {"name": "nginx", "cpu": 0.8},
+                                   {"name": "synoindexd", "cpu": 0.4}],
+                     "users": [{"user": "lutz", "ip": "192.168.178.44", "proto": "SMB"},
+                               {"user": "lutz", "ip": "192.168.178.10", "proto": "DSM"}]},
+        "synology_folders": {"ok": True, "error": None, "scanned_at": now - 3200,
+                             "top": [{"path": "/volume1/backup", "label": "backup", "size": 8.1e11},
+                                     {"path": "/volume1/homes/lutz/Downloads", "label": "Downloads",
+                                      "size": 3.2e11},
+                                     {"path": "/volume1/media", "label": "media", "size": 2.9e11},
+                                     {"path": "/volume1/docker", "label": "docker", "size": 6.4e10}]},
         "ts": now,
     }
+
+
+@app.on_event("startup")
+async def _start_background_jobs():
+    if not MOCK and OPT.get("synology_host") and OPT.get("synology_user"):
+        asyncio.create_task(_syno_folder_scan_loop())
 
 
 # ------------------------------------------------------------ Routen ----------
@@ -398,17 +654,19 @@ def _mock():
 async def api_data():
     if MOCK:
         return JSONResponse(_mock())
-    async with httpx.AsyncClient() as client:
-        hass, ubuntu, pihole, pihole_hw, usage, website = await asyncio.gather(
+    async with httpx.AsyncClient(verify=False) as client:
+        hass, ubuntu, pihole, pihole_hw, usage, website, synology = await asyncio.gather(
             collect_hass(client),
             collect_glances(client, OPT["ubuntu_host"], OPT["glances_port"], "Ubuntu-Server"),
             collect_pihole(client, OPT["pihole_host"], OPT["pihole_password"]),
             collect_glances(client, OPT["pihole_host"], OPT["glances_port"], "Pi-hole"),
             collect_usage(client, OPT["usage_url"]),
             collect_website(OPT["website_url"], OPT["website_name"]),
+            collect_synology(client, OPT),
         )
     return JSONResponse({"hass": hass, "ubuntu": ubuntu, "pihole": pihole,
                          "pihole_hw": pihole_hw, "usage": usage, "website": website,
+                         "synology": synology, "synology_folders": _syno_folder_cache,
                          "ts": time.time()})
 
 

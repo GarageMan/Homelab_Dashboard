@@ -140,6 +140,59 @@ function piholeCard(d, hw){
   </div>`;
 }
 
+function sectionLabel(text){
+  return `<div class="row" style="margin-top:8px"><span class="k" style="color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.4px">${text}</span></div>`;
+}
+
+function synologyCard(d, folders){
+  if(!d||!d.ok){
+    return `<div class="card"><h2><span class="dot bad"></span>Synology DiskStation
+            <span class="sub">nicht erreichbar</span></h2>
+            <div class="err">${(d&&d.error)||'keine Daten'}</div></div>`;
+  }
+  const vol = (d.volumes||[]).map(v=>{
+    const statCol = v.status==='normal'?'var(--ok)':'var(--warn)';
+    return bar(v.id||'Volume', v.pct, v.total?` · ${fmtBytes(v.used)} / ${fmtBytes(v.total)}`:'')
+      + `<div class="row"><span class="k">Status</span><span class="v" style="color:${statCol}">${v.status}</span></div>`;
+  }).join('');
+  const procs = (d.processes||[]).length
+    ? (d.processes||[]).map(p=>`<div class="row"><span class="k">${p.name}</span><span class="v">${n(p.cpu,' %')}</span></div>`).join('')
+    : `<div class="row"><span class="k">–</span><span class="v">keine Daten</span></div>`;
+  const users = (d.users||[]).length
+    ? (d.users||[]).map(u=>`<div class="row"><span class="k">${u.user}${u.proto?' · '+u.proto:''}</span><span class="v">${u.ip||''}</span></div>`).join('')
+    : `<div class="row"><span class="k">Angemeldet</span><span class="v">niemand</span></div>`;
+  let folderBlock = '';
+  if(folders && folders.ok && (folders.top||[]).length){
+    const stamp = folders.scanned_at
+      ? new Date(folders.scanned_at*1000).toLocaleString('de-DE',{weekday:'short',hour:'2-digit',minute:'2-digit'})
+      : '–';
+    const rows = folders.top.map(f=>
+      `<div class="row"><span class="k">${f.label||f.path}</span><span class="v">${fmtBytes(f.size)}</span></div>`).join('');
+    folderBlock = `<div class="hr"></div>
+      <div class="row"><span class="k" style="color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.4px">Größte Ordner</span><span class="sub" style="margin-left:0">Stand ${stamp}</span></div>
+      ${rows}`;
+  } else if(folders && !folders.ok){
+    folderBlock = `<div class="hr"></div>${sectionLabel('Größte Ordner')}
+      <div class="err">${folders.error||'noch kein Scan'}</div>`;
+  }
+  return `<div class="card">
+    <h2><span class="dot ok"></span>Synology DiskStation<span class="sub">${d.model||''}</span></h2>
+    ${bar('CPU', d.cpu_pct)}
+    ${bar('RAM', d.mem_pct)}
+    ${vol}
+    ${d.temp_c!=null?`<div class="row"><span class="k">Temperatur</span><span class="v">${n(d.temp_c,' °C')}</span></div>`:''}
+    ${d.net_rx!=null?`<div class="row"><span class="k">Netzwerk</span><span class="v">↓ ${fmtRate(d.net_rx)} · ↑ ${fmtRate(d.net_tx)}</span></div>`:''}
+    <div class="row"><span class="k">Uptime</span><span class="v">${d.uptime||'–'}</span></div>
+    <div class="hr"></div>
+    ${sectionLabel('Top-Prozesse (CPU)')}
+    ${procs}
+    <div class="hr"></div>
+    ${sectionLabel('Angemeldete Benutzer')}
+    ${users}
+    ${folderBlock}
+  </div>`;
+}
+
 function ring(pct,cap,resetTs){
   const R=52,C=2*Math.PI*R, p=Math.max(0,Math.min(100,pct||0));
   const off=C*(1-p/100);
@@ -201,6 +254,7 @@ async function tick(){
     g.appendChild($(hassCard(d.hass)));
     g.appendChild($(generalCard('Ubuntu-Server', d.ubuntu)));
     g.appendChild($(piholeCard(d.pihole, d.pihole_hw)));
+    if(d.synology && d.synology.host){ g.appendChild($(synologyCard(d.synology, d.synology_folders))); }
     g.appendChild($(usageCard(d.usage)));
     if(d.website && d.website.ok){ g.appendChild($(websiteCard(d.website))); }
     document.getElementById('stamp').textContent =

@@ -282,7 +282,63 @@ Add-on **Aktualisieren** → **Starten**.
 
 ---
 
-## 5. Konfigurationsoptionen
+## 5. Synology DiskStation (optional)
+
+Zeigt CPU, RAM, Netzwerk, Temperatur, Volumes, die CPU-hungrigsten Prozesse und
+angemeldete Benutzer der DiskStation — plus, alle 6 Stunden im Hintergrund neu
+berechnet, die größten Ordner je Freigabe (2 Ebenen tief), ähnlich TreeSize.
+Läuft komplett über die eingebaute DSM-Web-API, es muss nichts auf der
+DiskStation installiert werden.
+
+### 5a. Eigenen Benutzer in DSM anlegen
+
+Die von DSM benötigten System-APIs (CPU/RAM/Storage/Prozesse) verlangen laut
+Synologys eigener Dokumentation zwingend einen Benutzer aus der Gruppe
+**„administrators"** — das lässt sich aber überall sonst einschränken:
+
+1. **Systemsteuerung → Benutzer & Gruppe → Erstellen** → z. B. `dashboard-api`,
+   eigenes Passwort, Gruppe **administrators**
+2. Reiter **Anwendungen**: Zugriff auf **alles verweigern**, außer **File
+   Station** (nur nötig für die Ordnergrößen-Funktion — ohne die reicht auch
+   „alles verweigern")
+3. Reiter **Freigabeordner**: pro Freigabe nur **Lesen**, nirgends **Schreiben**
+4. Ist auf der DiskStation eine **2-Stufen-Verifizierung** für Administratoren
+   erzwungen, greift sie auch für diesen Benutzer — weiter mit 5b.
+
+### 5b. Einmalig: Geräte-Token für 2FA erzeugen
+
+Nur nötig, wenn 2FA für Administratoren erzwungen ist. DSM kann ein Gerät
+dauerhaft als vertrauenswürdig merken, sodass künftige Logins ganz ohne
+OTP-Code auskommen. Von einem Rechner im selben LAN, mit dem **aktuellen**
+6-stelligen OTP-Code aus der Authenticator-App:
+
+```bash
+curl -sk "https://IP-Synology:5001/webapi/entry.cgi?api=SYNO.API.Auth&version=6&method=login\
+&account=dashboard-api&passwd=DEIN-PASSWORT&otp_code=123456\
+&enable_device_token=yes&device_name=homelab-dashboard"
+```
+
+In der Antwort steht `"did":"..."` — dieser Wert ist die `device_id`. Kopieren
+und im nächsten Schritt in die Add-on-Option `synology_device_id` eintragen.
+
+### 5c. Add-on-Optionen setzen
+
+```yaml
+synology_host: IP-Synology
+synology_port: 5001
+synology_https: true
+synology_user: dashboard-api
+synology_password: "DEIN-PASSWORT"
+synology_device_id: "DIE-DID-AUS-5b"      # leer lassen, falls kein 2FA erzwungen
+```
+
+Ist `synology_host` leer, blendet sich die Kachel komplett aus. Details und der
+Funktionstest stehen ausführlicher im [Haupt-DOCS.md](../DOCS.md#5-synology-diskstation-optional)
+im Repo-Wurzelverzeichnis.
+
+---
+
+## 6. Konfigurationsoptionen
 
 | Option            | Bedeutung                                         | Beispiel                       |
 |-------------------|---------------------------------------------------|--------------------------------|
@@ -292,13 +348,19 @@ Add-on **Aktualisieren** → **Starten**.
 | `pihole_password` | Pi-hole-**App**-Passwort                          | `••••••`                       |
 | `usage_url`       | URL des Claude-Usage-Exporters                    | `http://IP-Ubuntu-FS:8787/usage` |
 | `refresh_seconds` | Aktualisierungsintervall des Dashboards (5–120 s) | `15`                           |
+| `synology_host`   | Adresse der DiskStation (leer = Kachel aus)       | `IP-Synology`                  |
+| `synology_port`   | DSM-Port                                          | `5001`                         |
+| `synology_https`  | DSM per HTTPS ansprechen                          | `true`                         |
+| `synology_user`   | dedizierter API-Benutzer (Abschnitt 5a)           | `dashboard-api`                |
+| `synology_password` | Passwort dieses Benutzers                       | `••••••`                       |
+| `synology_device_id` | Geräte-Token bei erzwungenem 2FA (Abschnitt 5b) | leer, falls kein 2FA           |
 
 Alle Werte lassen sich jederzeit im Reiter **Konfiguration** ändern — kein
 Rebuild nötig.
 
 ---
 
-## 6. Fehlersuche
+## 7. Fehlersuche
 
 | Symptom | Ursache / Lösung |
 |---|---|
@@ -310,11 +372,18 @@ Rebuild nötig.
 | HASS-Storage in „B" statt „GB" | Vor v1.0.1; auf aktuelle Add-on-Version aktualisieren |
 | Claude Usage „nicht erreichbar" | Exporter-Dienst läuft? `systemctl status claude-usage-exporter` |
 | Claude Usage `HTTP 401` | Login-Token abgelaufen → einmal `claude` auf dem Ubuntu-Server ausführen |
+| Synology-Kachel fehlt | `synology_host` ist leer — sobald gesetzt, erscheint die Kachel |
+| Synology „Login fehlgeschlagen" | Benutzer/Passwort falsch, oder 2FA erzwungen ohne gültige `synology_device_id` (Abschnitt 5b) |
+| Synology „Größte Ordner": kein Scan | Läuft erst 6 h nach Add-on-Start und braucht `synology_user` mit File-Station-Zugriff (Abschnitt 5a) |
 
 ---
 
 ## Versionshinweise
 
+- **1.2.0** — Neue Synology-DiskStation-Kachel: CPU/RAM/Netzwerk/Temperatur/Volumes,
+  Top-CPU-Prozesse, angemeldete Benutzer, plus ein alle 6 h laufender
+  Hintergrund-Scan der größten Ordner je Freigabe (ähnlich TreeSize). Siehe
+  Abschnitt 5.
 - **1.0.1** — HASS-Pi-Storage korrekt in GB statt Bytes; Dokumentation an reale
   Umgebung angepasst (venv/pipx-Glances, Login-Token-Exporter, sprachabhängige
   Systemmonitor-IDs, deutsche Menüpfade).
