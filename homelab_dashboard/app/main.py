@@ -519,8 +519,13 @@ async def collect_synology(client: httpx.AsyncClient, opt: dict) -> dict:
     # DSM liefert die Prozessliste unter "process" (Singular) mit "command"/"cpu"
     # direkt auf oberster Ebene - nicht "processes"/"name"/additional.cpu, wie eine
     # aeltere DSM-API-Doku nahelegen wuerde. Beide Varianten werden abgedeckt.
+    # "synoscgi_*"-Eintraege sind die kurzlebigen DSM-Prozesse, die UNSERE eigenen
+    # API-Aufrufe bedienen (inkl. des Ordner-Scans) - die werden rausgefiltert,
+    # sonst misst sich die Kachel staendig selbst statt echte Last zu zeigen.
     proc_list = []
     proc_items = procs.get("process") or procs.get("processes") or []
+    proc_items = [p for p in proc_items
+                  if not str(p.get("command") or p.get("name") or "").startswith("synoscgi")]
     for p in sorted(proc_items, key=lambda p: _num(p.get("cpu", (p.get("additional") or {}).get("cpu"))),
                     reverse=True)[:6]:
         add = p.get("additional") or {}
