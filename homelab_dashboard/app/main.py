@@ -20,28 +20,40 @@ OPTIONS_FILE = "/data/options.json"
 
 
 def load_options() -> dict:
-    """Optionen aus dem Add-on lesen; fuer lokale Tests via ENV ueberschreibbar."""
+    """Optionen aus dem Add-on lesen; fuer lokale Tests via ENV ueberschreibbar.
+
+    Ab config.yaml 1.3.0 sind die Optionen im Formular gruppiert (ubuntu/,
+    pihole/, website/, claude_usage/, synology/), damit die Konfigurationsseite
+    uebersichtlicher ist. Intern arbeitet der Rest des Codes weiterhin mit den
+    flachen Schluesseln (OPT["synology_host"] usw.) - nur diese Funktion kennt
+    die verschachtelte Struktur.
+    """
     opts = {}
     try:
         opts = json.loads(Path(OPTIONS_FILE).read_text())
     except Exception:
         pass
+    ubuntu = opts.get("ubuntu", {}) or {}
+    pihole = opts.get("pihole", {}) or {}
+    website = opts.get("website", {}) or {}
+    claude_usage = opts.get("claude_usage", {}) or {}
+    synology = opts.get("synology", {}) or {}
     return {
-        "ubuntu_host": os.getenv("UBUNTU_HOST", opts.get("ubuntu_host", "192.168.1.75")),
-        "pihole_host": os.getenv("PIHOLE_HOST", opts.get("pihole_host", "192.168.1.5")),
+        "ubuntu_host": os.getenv("UBUNTU_HOST", ubuntu.get("host", "192.168.1.75")),
+        "pihole_host": os.getenv("PIHOLE_HOST", pihole.get("host", "192.168.1.5")),
         "glances_port": int(os.getenv("GLANCES_PORT", opts.get("glances_port", 61208))),
-        "pihole_password": os.getenv("PIHOLE_PASSWORD", opts.get("pihole_password", "")),
-        "usage_url": os.getenv("USAGE_URL", opts.get("usage_url", "")),
-        "website_url": os.getenv("WEBSITE_URL", opts.get("website_url", "")),
-        "website_name": os.getenv("WEBSITE_NAME", opts.get("website_name", "Webseite")),
+        "pihole_password": os.getenv("PIHOLE_PASSWORD", pihole.get("password", "")),
+        "usage_url": os.getenv("USAGE_URL", claude_usage.get("url", "")),
+        "website_url": os.getenv("WEBSITE_URL", website.get("url", "")),
+        "website_name": os.getenv("WEBSITE_NAME", website.get("name", "Webseite")),
         "refresh_seconds": int(os.getenv("REFRESH_SECONDS", opts.get("refresh_seconds", 15))),
-        "synology_host": os.getenv("SYNOLOGY_HOST", opts.get("synology_host", "")),
-        "synology_port": int(os.getenv("SYNOLOGY_PORT", opts.get("synology_port", 5001))),
-        "synology_https": str(os.getenv("SYNOLOGY_HTTPS", opts.get("synology_https", True))).lower()
+        "synology_host": os.getenv("SYNOLOGY_HOST", synology.get("host", "")),
+        "synology_port": int(os.getenv("SYNOLOGY_PORT", synology.get("port", 5001))),
+        "synology_https": str(os.getenv("SYNOLOGY_HTTPS", synology.get("https", True))).lower()
                           not in ("0", "false", "no"),
-        "synology_user": os.getenv("SYNOLOGY_USER", opts.get("synology_user", "")),
-        "synology_password": os.getenv("SYNOLOGY_PASSWORD", opts.get("synology_password", "")),
-        "synology_device_id": os.getenv("SYNOLOGY_DEVICE_ID", opts.get("synology_device_id", "")),
+        "synology_user": os.getenv("SYNOLOGY_USER", synology.get("user", "")),
+        "synology_password": os.getenv("SYNOLOGY_PASSWORD", synology.get("password", "")),
+        "synology_device_id": os.getenv("SYNOLOGY_DEVICE_ID", synology.get("device_id", "")),
     }
 
 

@@ -1,5 +1,5 @@
 name: Homelab Dashboard
-version: "1.2.1"
+version: "1.3.0"
 slug: homelab_dashboard
 description: >-
   Konsolidiertes Dashboard fuer HASS-Pi, Ubuntu-Server, Pi-hole und Synology
@@ -17,32 +17,42 @@ hassio_api: true
 hassio_role: default
 homeassistant_api: true
 options:
-  ubuntu_host: "192.168.1.6"
-  pihole_host: "192.168.1.5"
-  glances_port: 61208
-  pihole_password: ""
-  usage_url: "http://192.168.1.7:8787/usage"
   refresh_seconds: 15
-  website_url: ""
-  website_name: "Webseite"
-  synology_host: ""
-  synology_port: 5001
-  synology_https: true
-  synology_user: ""
-  synology_password: ""
-  synology_device_id: ""
+  glances_port: 61208
+  ubuntu:
+    host: "192.168.1.6"
+  pihole:
+    host: "192.168.1.5"
+    password: ""
+  website:
+    url: ""
+    name: "Webseite"
+  claude_usage:
+    url: "http://192.168.1.7:8787/usage"
+  synology:
+    host: ""
+    port: 5001
+    https: true
+    user: ""
+    password: ""
+    device_id: ""
 schema:
-  ubuntu_host: str
-  pihole_host: str
-  glances_port: port
-  pihole_password: password?
-  usage_url: str?
   refresh_seconds: int(5,120)
-  website_url: str?
-  website_name: str?
-  synology_host: str?
-  synology_port: port?
-  synology_https: bool?
-  synology_user: str?
-  synology_password: password?
-  synology_device_id: str?
+  glances_port: port
+  ubuntu:
+    host: str
+  pihole:
+    host: str
+    password: password?
+  website:
+    url: str?
+    name: str?
+  claude_usage:
+    url: str?
+  synology:
+    host: str?
+    port: port?
+    https: bool?
+    user: str?
+    password: password?
+    device_id: str?

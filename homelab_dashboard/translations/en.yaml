@@ -1,0 +1,69 @@
+configuration:
+  refresh_seconds:
+    name: Refresh interval (sec)
+    description: How often the dashboard re-fetches data in the browser (5-120 seconds).
+  glances_port:
+    name: Glances port
+    description: >-
+      Port of the Glances service, used for BOTH the Ubuntu server and the
+      Pi-hole Raspi (default 61208).
+  ubuntu:
+    name: Ubuntu Server
+    description: Connection to the Ubuntu server (Glances service).
+    host:
+      name: Host / IP address
+      description: IP address or hostname of the Ubuntu server.
+  pihole:
+    name: Pi-hole
+    description: Connection to Pi-hole and the Raspi it runs on.
+    host:
+      name: Host / IP address
+      description: IP address or hostname of the Pi-hole Raspi.
+    password:
+      name: App password
+      description: >-
+        Pi-hole app password (Pi-hole UI -> Settings -> API/Web interface ->
+        Show App password, Pi-hole v6+).
+  website:
+    name: Website (optional)
+    description: Optionally monitors the reachability of a URL of your choice.
+    url:
+      name: URL
+      description: Leave empty to disable the website tile.
+    name:
+      name: Display name
+      description: Label of the tile in the dashboard.
+  claude_usage:
+    name: Claude Usage (optional)
+    description: Shows session and weekly usage from the Claude usage exporter.
+    url:
+      name: Usage endpoint URL
+      description: Leave empty to disable the Claude Usage tile.
+  synology:
+    name: Synology DiskStation (optional)
+    description: >-
+      CPU/RAM/network/temperature/volumes/processes/users of the DiskStation,
+      plus the largest folders per share. See DOCS.md section 5 for setting up
+      a dedicated DSM user. Leave "Host" empty to disable the tile.
+    host:
+      name: Host / IP address
+      description: IP address or hostname of the DiskStation.
+    port:
+      name: Port
+      description: DSM port - usually 5001 (HTTPS) or 5000 (HTTP).
+    https:
+      name: Use HTTPS
+      description: >-
+        Turn off if the DiskStation is only reachable over HTTP. When on, a
+        self-signed DSM certificate is accepted as well.
+    user:
+      name: User
+      description: Dedicated DSM user for the dashboard (see DOCS.md).
+    password:
+      name: Password
+      description: Password of the DSM user.
+    device_id:
+      name: Device ID (device_id)
+      description: >-
+        device_id obtained via a one-time OTP login, so 2FA is not required
+        on every subsequent login (see DOCS.md section 5b).

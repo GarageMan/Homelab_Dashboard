@@ -1,0 +1,71 @@
+configuration:
+  refresh_seconds:
+    name: Aktualisierungsintervall (Sek.)
+    description: >-
+      Wie oft das Dashboard im Browser die Daten neu abruft (5-120 Sekunden).
+  glances_port:
+    name: Glances-Port
+    description: >-
+      Port des Glances-Dienstes, gilt fuer Ubuntu-Server UND den Pi-hole-Raspi
+      (Standard 61208).
+  ubuntu:
+    name: Ubuntu-Server
+    description: Verbindung zum Ubuntu-Server (Glances-Dienst).
+    host:
+      name: Host / IP-Adresse
+      description: IP-Adresse oder Hostname des Ubuntu-Servers.
+  pihole:
+    name: Pi-hole
+    description: Verbindung zu Pi-hole und dem Raspi, auf dem es laeuft.
+    host:
+      name: Host / IP-Adresse
+      description: IP-Adresse oder Hostname des Pi-hole-Raspi.
+    password:
+      name: App-Passwort
+      description: >-
+        Pi-hole-App-Passwort (Pi-hole-Oberflaeche -> Einstellungen -> API/Web-
+        Oberflaeche -> App-Passwort anzeigen, ab Pi-hole v6).
+  website:
+    name: Webseite (optional)
+    description: Ueberwacht optional die Erreichbarkeit einer frei waehlbaren URL.
+    url:
+      name: URL
+      description: Leer lassen, um die Webseiten-Kachel zu deaktivieren.
+    name:
+      name: Anzeigename
+      description: Beschriftung der Kachel im Dashboard.
+  claude_usage:
+    name: Claude-Usage (optional)
+    description: Zeigt Session- und Wochen-Nutzung des Claude-Usage-Exporters.
+    url:
+      name: Usage-Endpoint-URL
+      description: Leer lassen, um die Claude-Usage-Kachel zu deaktivieren.
+  synology:
+    name: Synology DiskStation (optional)
+    description: >-
+      CPU/RAM/Netzwerk/Temperatur/Volumes/Prozesse/Benutzer der DiskStation
+      sowie die groessten Ordner je Freigabe. Details zur Einrichtung eines
+      dedizierten DSM-Benutzers: siehe DOCS.md, Abschnitt 5. Leeres Feld bei
+      "Host" deaktiviert die Kachel.
+    host:
+      name: Host / IP-Adresse
+      description: IP-Adresse oder Hostname der DiskStation.
+    port:
+      name: Port
+      description: DSM-Port - meist 5001 (HTTPS) oder 5000 (HTTP).
+    https:
+      name: HTTPS verwenden
+      description: >-
+        Aus, wenn die DiskStation nur ueber HTTP erreichbar ist. Bei "An"
+        wird das (auch selbstsignierte) DSM-Zertifikat akzeptiert.
+    user:
+      name: Benutzer
+      description: Dedizierter DSM-Benutzer fuer das Dashboard (siehe DOCS.md).
+    password:
+      name: Passwort
+      description: Passwort des DSM-Benutzers.
+    device_id:
+      name: Geraete-ID (device_id)
+      description: >-
+        Einmalig per OTP-Login ermittelte device_id, damit 2FA kuenftig nicht
+        bei jedem Login noetig ist (siehe DOCS.md, Abschnitt 5b).
