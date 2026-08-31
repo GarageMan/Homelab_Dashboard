@@ -280,16 +280,22 @@ HA-Oberfläche.)
 3. Store neu laden (Seite aktualisieren). Im Abschnitt **„Homelab Add-ons"**
    erscheint **„Homelab Dashboard"** → anklicken → **Installieren**.
    Der Pi **baut das Image selbst** (`pip install` …) — das dauert **1–3 Minuten**.
-4. Reiter **Konfiguration** → Werte auf die eigene Umgebung setzen:
+4. Reiter **Konfiguration** → das Formular ist in Abschnitte gruppiert
+   (Ubuntu-Server, Pi-hole, Webseite, Claude-Usage, Synology DiskStation),
+   Werte auf die eigene Umgebung setzen:
    ```yaml
-   ubuntu_host: IP-Ubuntu-FS
-   pihole_host: IP-Pi-Hole
-   glances_port: 61208
-   pihole_password: "DEIN-PIHOLE-APP-PASSWORT"
-   usage_url: http://IP-Ubuntu-FS:8787/usage
-   website_url: http://IP-Homeassistant
-   website_name: "Meine Webseite"
    refresh_seconds: 15
+   glances_port: 61208
+   ubuntu:
+     host: IP-Ubuntu-FS
+   pihole:
+     host: IP-Pi-Hole
+     password: "DEIN-PIHOLE-APP-PASSWORT"
+   website:
+     url: http://IP-Homeassistant
+     name: "Meine Webseite"
+   claude_usage:
+     url: http://IP-Ubuntu-FS:8787/usage
    ```
 5. Reiter **Info** → **Starten** → **„In Seitenleiste anzeigen"** aktivieren.
    Nach F5 erscheint **„Homelab"** in der Seitenleiste → öffnen.
@@ -353,15 +359,16 @@ wieder entfernst).
 Im Reiter **Konfiguration** des Add-ons:
 
 ```yaml
-synology_host: IP-Synology
-synology_port: 5001
-synology_https: true
-synology_user: dashboard-api
-synology_password: "DEIN-PASSWORT"
-synology_device_id: "DIE-DID-AUS-5b"      # leer lassen, falls kein 2FA erzwungen
+synology:
+  host: IP-Synology
+  port: 5001
+  https: true
+  user: dashboard-api
+  password: "DEIN-PASSWORT"
+  device_id: "DIE-DID-AUS-5b"      # leer lassen, falls kein 2FA erzwungen
 ```
 
-Ist `synology_host` leer, blendet sich die Kachel komplett aus.
+Ist `synology.host` leer, blendet sich die Kachel komplett aus.
 
 ### 5d. Funktionstest
 
@@ -385,22 +392,32 @@ nachsehen — die Fehlermeldung enthält die betroffene API und den DSM-Fehlerco
 
 ## 6. Konfigurationsoptionen
 
-| Option            | Bedeutung                                         | Beispiel                       |
-|-------------------|---------------------------------------------------|--------------------------------|
-| `ubuntu_host`     | Adresse des Ubuntu-Servers (Glances)              | `IP-Ubuntu-FS`                 |
-| `pihole_host`     | Adresse des Pi-hole (Glances + Pi-hole-API)       | `IP-Pi-Hole`                   |
-| `glances_port`    | Glances-Port auf beiden Servern                   | `61208`                        |
-| `pihole_password` | Pi-hole-**App**-Passwort                          | `••••••`                       |
-| `usage_url`       | URL des Claude-Usage-Exporters                    | `http://IP-Ubuntu-FS:8787/usage` |
-| `website_url`     | URL für den Webseiten-Status (leer = Kachel aus)  | `http://IP-Homeassistant`      |
-| `website_name`    | Anzeigename der Webseiten-Kachel                  | `Meine Webseite`               |
-| `refresh_seconds` | Aktualisierungsintervall des Dashboards (5–120 s) | `15`                           |
-| `synology_host`   | Adresse der DiskStation (leer = Kachel aus)       | `IP-Synology`                  |
-| `synology_port`   | DSM-Port                                          | `5001`                         |
-| `synology_https`  | DSM per HTTPS ansprechen                          | `true`                         |
-| `synology_user`   | dedizierter API-Benutzer (Abschnitt 5a)           | `dashboard-api`                |
-| `synology_password` | Passwort dieses Benutzers                       | `••••••`                       |
-| `synology_device_id` | Geräte-Token bei erzwungenem 2FA (Abschnitt 5b) | leer, falls kein 2FA           |
+Seit Version 1.3.0 ist das Konfigurationsformular in Abschnitte gruppiert.
+Beim Umstieg von einer älteren Version müssen die Werte einmalig neu
+eingetragen werden — Home Assistant übernimmt sie nicht automatisch aus den
+alten, flachen Optionsnamen in die neuen Gruppen.
+
+| Gruppe / Option              | Bedeutung                                         | Beispiel                       |
+|-------------------------------|---------------------------------------------------|--------------------------------|
+| `refresh_seconds`             | Aktualisierungsintervall des Dashboards (5–120 s) | `15`                           |
+| `glances_port`                | Glances-Port auf Ubuntu-Server UND Pi-hole-Raspi  | `61208`                        |
+| **Ubuntu-Server**             |                                                     |                                 |
+| `ubuntu.host`                 | Adresse des Ubuntu-Servers (Glances)              | `IP-Ubuntu-FS`                 |
+| **Pi-hole**                   |                                                     |                                 |
+| `pihole.host`                 | Adresse des Pi-hole (Glances + Pi-hole-API)       | `IP-Pi-Hole`                   |
+| `pihole.password`             | Pi-hole-**App**-Passwort                          | `••••••`                       |
+| **Webseite (optional)**       |                                                     |                                 |
+| `website.url`                 | URL für den Webseiten-Status (leer = Kachel aus)  | `http://IP-Homeassistant`      |
+| `website.name`                | Anzeigename der Webseiten-Kachel                  | `Meine Webseite`               |
+| **Claude-Usage (optional)**   |                                                     |                                 |
+| `claude_usage.url`            | URL des Claude-Usage-Exporters (leer = Kachel aus)| `http://IP-Ubuntu-FS:8787/usage` |
+| **Synology DiskStation (optional)** |                                               |                                 |
+| `synology.host`               | Adresse der DiskStation (leer = Kachel aus)       | `IP-Synology`                  |
+| `synology.port`                | DSM-Port                                          | `5001`                         |
+| `synology.https`               | DSM per HTTPS ansprechen                          | `true`                         |
+| `synology.user`                | dedizierter API-Benutzer (Abschnitt 5a)           | `dashboard-api`                |
+| `synology.password`            | Passwort dieses Benutzers                         | `••••••`                       |
+| `synology.device_id`           | Geräte-Token bei erzwungenem 2FA (Abschnitt 5b)   | leer, falls kein 2FA           |
 
 Alle Werte lassen sich jederzeit im Reiter **Konfiguration** ändern — kein
 Rebuild nötig.
@@ -419,8 +436,8 @@ Rebuild nötig.
 | HASS-Storage in „B" statt „GB" | Vor v1.0.1; auf aktuelle Add-on-Version aktualisieren |
 | Claude Usage „nicht erreichbar" | Exporter-Dienst läuft? `systemctl status claude-usage-exporter` |
 | Claude Usage `HTTP 401 … expired` | setup-token abgelaufen (~1 Jahr) → Routine `Claude-Usage-Token-erneuern.md` |
-| Webseiten-Kachel fehlt | `website_url` ist leer — sobald gesetzt, erscheint die Kachel |
-| Synology-Kachel fehlt | `synology_host` ist leer — sobald gesetzt, erscheint die Kachel |
+| Webseiten-Kachel fehlt | `website.url` ist leer — sobald gesetzt, erscheint die Kachel |
+| Synology-Kachel fehlt | `synology.host` ist leer — sobald gesetzt, erscheint die Kachel |
 | Synology „Login fehlgeschlagen" | Benutzer/Passwort falsch, oder 2FA erzwungen ohne gültige `synology_device_id` (Abschnitt 5b) |
 | Synology-API-Fehler Code 105/106/107/119 | Session abgelaufen — wird beim nächsten Poll automatisch neu eingeloggt; bleibt es bestehen, `synology_password`/`synology_device_id` prüfen |
 | Synology „Größte Ordner": kein Scan | Läuft erst 6 h nach Add-on-Start und braucht `synology_user` mit File-Station-Zugriff (Abschnitt 5a) |
@@ -430,6 +447,11 @@ Rebuild nötig.
 
 ## Versionshinweise
 
+- **1.3.0** — Konfigurationsformular in Abschnitte gruppiert (Ubuntu-Server,
+  Pi-hole, Webseite, Claude-Usage, Synology DiskStation) statt einer langen
+  flachen Liste; deutsche und englische Feldbeschriftungen/-beschreibungen
+  über `translations/`. **Achtung:** bestehende Werte müssen nach dem Update
+  einmalig neu eingetragen werden (siehe Abschnitt 6).
 - **1.2.1** — Die Synology-Kachel zeigt bei Verbindungs-/Login-Problemen jetzt den
   tatsächlichen Grund an (z. B. Verbindungsfehler zu Host/Port, oder den
   konkreten DSM-Fehlercode samt Klartext wie „Zugriff verweigert" oder
@@ -441,7 +463,7 @@ Rebuild nötig.
   TreeSize). Konfiguration über `synology_*`-Add-on-Optionen, Login über die
   DSM-Web-API inkl. optionalem Geräte-Token für erzwungenes 2FA.
 - **1.1.1** — Webseiten-Status-Kachel (Online/Offline, HTTP-Code, Antwortzeit) über
-  `website_url`/`website_name`.
+  `website.url`/`website.name`.
 - **1.1.0** — Pi-hole-Kachel zeigt zusätzlich die Hardware des Pi-hole-Raspi
   (CPU/RAM/Storage/Temp/Uptime, aus dem dort laufenden Glances); Ubuntu-Kachel um
   Kernel, Prozesse, Swap und weitere Volumes erweitert; „Gesundheit" umbenannt in
