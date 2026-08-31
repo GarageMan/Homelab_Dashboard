@@ -396,6 +396,7 @@ Rebuild nötig.
 
 ## Versionshinweise
 
+- **1.3.2** — "Top-Prozesse" filtert jetzt `synoscgi_*`-Eintraege heraus (das sind DSM-eigene, kurzlebige Prozesse fuer die eigenen API-Aufrufe des Dashboards inkl. Ordner-Scan) - vorher dominierten die sich selbst statt echter Last wie z. B. Indexierung oder Backup. Hinweis: CPU-Werte >100 % pro Prozess sind normal (ein Kern = 100 %, Mehrkern-/Multithread-Prozesse koennen mehr anzeigen).
 - **1.3.1** — Top-Prozesse und angemeldete Benutzer der Synology-Kachel zeigten mangels korrekter DSM-Feldnamen keine Daten ("keine Daten" / "?"). Behoben: Prozessliste steht unter `process` mit `command`/`cpu` direkt auf oberster Ebene, Benutzername/Quell-IP der aktuellen Verbindungen unter `who`/`from` statt `account`/`address`.
 - **1.3.0** — Konfigurationsformular in Abschnitte gruppiert (Ubuntu-Server,
   Pi-hole, Webseite, Claude-Usage, Synology DiskStation) statt einer langen
