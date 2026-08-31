@@ -303,9 +303,16 @@ Synologys eigener Dokumentation zwingend einen Benutzer aus der Gruppe
 
 1. **Systemsteuerung → Benutzer & Gruppe → Erstellen** → z. B. `dashboard-api`,
    eigenes Passwort, Gruppe **administrators**
-2. Reiter **Anwendungen**: Zugriff auf **alles verweigern**, außer **File
-   Station** (nur nötig für die Ordnergrößen-Funktion — ohne die reicht auch
-   „alles verweigern")
+2. Reiter **Anwendungen**: **„DSM" muss erlaubt bleiben** — DSMs Web-GUI-Login
+   läuft über genau dieselbe API wie der Login des Dashboards, ein verweigertes
+   „DSM" blockiert also **beide** (nicht nur die Web-Oberfläche). Alles andere
+   auf **verweigern**, außer **File Station** (nur für die Ordnergrößen-Funktion
+   nötig — ohne die reicht „DSM" allein). Weil dieser Benutzer zwingend in der
+   Gruppe „administrators" ist *und* „DSM" erlaubt sein muss, hat ein
+   kompromittiertes Passwort vollen Admin-Zugriff auf die Web-Oberfläche — als
+   Ausgleich in derselben Zeile bei „DSM" auf **„Nach IP-Adresse"** klicken und
+   nur die IP des Home-Assistant-Geräts eintragen, dann funktioniert der Login
+   ausschließlich von dort aus.
 3. Reiter **Freigabeordner**: pro Freigabe nur **Lesen**, nirgends **Schreiben**
 4. Ist auf der DiskStation eine **2-Stufen-Verifizierung** für Administratoren
    erzwungen, greift sie auch für diesen Benutzer — weiter mit 5b.
@@ -389,13 +396,19 @@ Rebuild nötig.
 | Claude Usage „nicht erreichbar" | Exporter-Dienst läuft? `systemctl status claude-usage-exporter` |
 | Claude Usage `HTTP 401` | Login-Token abgelaufen → einmal `claude` auf dem Ubuntu-Server ausführen |
 | Synology-Kachel fehlt | `synology.host` ist leer — sobald gesetzt, erscheint die Kachel |
-| Synology „Login fehlgeschlagen" | Benutzer/Passwort falsch, oder 2FA erzwungen ohne gültige `synology_device_id` (Abschnitt 5b) |
+| Synology „Login fehlgeschlagen" | Benutzer/Passwort falsch, oder 2FA erzwungen ohne gültige `synology.device_id` (Abschnitt 5b) |
 | Synology „Größte Ordner": kein Scan | Läuft erst 6 h nach Add-on-Start und braucht `synology_user` mit File-Station-Zugriff (Abschnitt 5a) |
 
 ---
 
 ## Versionshinweise
 
+- **Doku-Fix** — Abschnitt 5a korrigiert: Die Anwendung „DSM" muss beim
+  dedizierten Benutzer erlaubt bleiben (nicht verweigert werden), sonst
+  scheitert sowohl der GUI- als auch der API-Login, da beide dieselbe
+  DSM-Auth-API nutzen. Als Ausgleich fuer die dadurch noetige
+  Admin-Berechtigung: „DSM" per „Nach IP-Adresse" auf die IP des
+  Home-Assistant-Geraets einschraenken.
 - **1.3.2** — "Top-Prozesse" filtert jetzt `synoscgi_*`-Eintraege heraus (das sind DSM-eigene, kurzlebige Prozesse fuer die eigenen API-Aufrufe des Dashboards inkl. Ordner-Scan) - vorher dominierten die sich selbst statt echter Last wie z. B. Indexierung oder Backup. Hinweis: CPU-Werte >100 % pro Prozess sind normal (ein Kern = 100 %, Mehrkern-/Multithread-Prozesse koennen mehr anzeigen).
 - **1.3.1** — Top-Prozesse und angemeldete Benutzer der Synology-Kachel zeigten mangels korrekter DSM-Feldnamen keine Daten ("keine Daten" / "?"). Behoben: Prozessliste steht unter `process` mit `command`/`cpu` direkt auf oberster Ebene, Benutzername/Quell-IP der aktuellen Verbindungen unter `who`/`from` statt `account`/`address`.
 - **1.3.0** — Konfigurationsformular in Abschnitte gruppiert (Ubuntu-Server,
