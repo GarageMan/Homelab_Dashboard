@@ -5,7 +5,7 @@ Ein kleines **Home-Assistant-Add-on**, das mehrere Server auf einen Blick zusamm
 **Claude-Usage**-Kachel und einen optionalen **Webseiten-Status**.
 Läuft als Ingress-Panel direkt in der HA-Seitenleiste (HA-Login, kein offener Port).
 
-![Dashboard-Vorschau](docs/preview.png)
+![Dashboard-Vorschau](docs/preview_new.png)
 
 ## Was es zeigt
 
