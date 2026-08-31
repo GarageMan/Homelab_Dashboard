@@ -447,6 +447,7 @@ Rebuild nötig.
 
 ## Versionshinweise
 
+- **1.3.1** — Top-Prozesse und angemeldete Benutzer der Synology-Kachel zeigten mangels korrekter DSM-Feldnamen keine Daten ("keine Daten" / "?"). Behoben: Prozessliste steht unter `process` mit `command`/`cpu` direkt auf oberster Ebene, Benutzername/Quell-IP der aktuellen Verbindungen unter `who`/`from` statt `account`/`address`.
 - **1.3.0** — Konfigurationsformular in Abschnitte gruppiert (Ubuntu-Server,
   Pi-hole, Webseite, Claude-Usage, Synology DiskStation) statt einer langen
   flachen Liste; deutsche und englische Feldbeschriftungen/-beschreibungen

@@ -516,17 +516,25 @@ async def collect_synology(client: httpx.AsyncClient, opt: dict) -> dict:
             "pct": round(used / total * 100, 1) if total else None,
         })
 
+    # DSM liefert die Prozessliste unter "process" (Singular) mit "command"/"cpu"
+    # direkt auf oberster Ebene - nicht "processes"/"name"/additional.cpu, wie eine
+    # aeltere DSM-API-Doku nahelegen wuerde. Beide Varianten werden abgedeckt.
     proc_list = []
-    for p in sorted(procs.get("processes") or [],
-                    key=lambda p: _num((p.get("additional") or {}).get("cpu")), reverse=True)[:6]:
+    proc_items = procs.get("process") or procs.get("processes") or []
+    for p in sorted(proc_items, key=lambda p: _num(p.get("cpu", (p.get("additional") or {}).get("cpu"))),
+                    reverse=True)[:6]:
         add = p.get("additional") or {}
-        proc_list.append({"name": p.get("name") or "?", "cpu": round(_num(add.get("cpu")), 1)})
+        cpu_val = p.get("cpu", add.get("cpu"))
+        name_val = p.get("command") or p.get("name") or "?"
+        proc_list.append({"name": name_val, "cpu": round(_num(cpu_val), 1)})
 
+    # Aehnlich bei den aktuellen Verbindungen: Benutzername steht in "who", die
+    # Quell-IP in "from" (nicht "account"/"user" bzw. "address"/"ip").
     users = []
     for c in (conns.get("items") or conns.get("connection") or []):
         users.append({
-            "user": c.get("account") or c.get("user") or "?",
-            "ip": c.get("address") or c.get("ip") or "",
+            "user": c.get("who") or c.get("account") or c.get("user") or "?",
+            "ip": c.get("from") or c.get("address") or c.get("ip") or "",
             "proto": (c.get("type") or c.get("protocol") or "").upper(),
         })
 
