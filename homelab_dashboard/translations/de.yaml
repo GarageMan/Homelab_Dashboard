@@ -69,3 +69,20 @@ configuration:
       description: >-
         Einmalig per OTP-Login ermittelte device_id, damit 2FA kuenftig nicht
         bei jedem Login noetig ist (siehe DOCS.md, Abschnitt 5b).
+  fritzbox:
+    name: FritzBox (optional)
+    description: >-
+      Geraeteliste (aktiv/gesamt) und WAN-Traffic der FritzBox per TR-064.
+      Details zur Einrichtung eines dedizierten FritzBox-Benutzers: siehe
+      DOCS.md, Abschnitt 6. Leeres Feld bei "Host" deaktiviert die Kachel.
+    host:
+      name: Host / IP-Adresse
+      description: IP-Adresse oder Hostname der FritzBox (z. B. fritz.box).
+    user:
+      name: Benutzer
+      description: >-
+        Dedizierter FritzBox-Benutzer mit Recht "FRITZ!Box Einstellungen"
+        (siehe DOCS.md). Leer lassen, falls TR-064 ohne Anmeldung erlaubt ist.
+    password:
+      name: Passwort
+      description: Passwort des FritzBox-Benutzers.

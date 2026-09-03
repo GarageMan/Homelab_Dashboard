@@ -45,6 +45,23 @@
   .ring .cap{font-size:12px;color:var(--muted);margin-top:6px;text-transform:uppercase;letter-spacing:.5px}
   .ring .reset{font-size:12px;color:var(--txt);margin-top:2px}
   .ring .reset small{color:var(--muted)}
+  /* FritzBox-Geraeteliste */
+  details.devlist{margin-top:10px}
+  details.devlist summary{cursor:pointer;font-size:12.5px;color:var(--lbl);
+      list-style:none;display:flex;align-items:center;gap:6px;user-select:none}
+  details.devlist summary::-webkit-details-marker{display:none}
+  details.devlist summary::before{content:'▸';display:inline-block;
+      transition:transform .15s;color:var(--muted)}
+  details.devlist[open] summary::before{transform:rotate(90deg)}
+  details.devlist .devstamp{color:var(--muted);font-weight:400;margin-left:auto;font-size:11.5px}
+  .devrow{display:flex;justify-content:space-between;gap:10px;font-size:12px;
+      padding:5px 0;border-bottom:1px solid var(--line)}
+  .devrow:last-child{border-bottom:none}
+  .devrow .dn{color:var(--txt);display:flex;align-items:center;min-width:0}
+  .devrow .dn span.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .devrow .di{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .devdot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:7px;flex:0 0 auto}
+  .devdot.on{background:var(--ok)} .devdot.off{background:var(--muted)}
 </style>
 </head>
 <body>
@@ -193,6 +210,46 @@ function synologyCard(d, folders){
   </div>`;
 }
 
+function fritzboxCard(d){
+  if(!d||!d.ok){
+    return `<div class="card"><h2><span class="dot bad"></span>FritzBox
+            <span class="sub">nicht erreichbar</span></h2>
+            <div class="err">${(d&&d.error)||'keine Daten'}</div></div>`;
+  }
+  const conn = d.connected;
+  const connPill = conn==null?'–':(conn?`<span class="pill ok">Verbunden</span>`:`<span class="pill warn">Getrennt</span>`);
+  const speed = (d.max_down_mbit!=null||d.max_up_mbit!=null)
+    ? `<div class="row"><span class="k">Sync-Speed</span><span class="v">↓ ${d.max_down_mbit??'–'} · ↑ ${d.max_up_mbit??'–'} Mbit/s</span></div>` : '';
+  const devErr = (d.devices_ok===false)
+    ? `<div class="err">Geräteliste: ${d.devices_error||'noch kein Scan'}</div>` : '';
+  const devStamp = d.devices_scanned_at
+    ? new Date(d.devices_scanned_at*1000).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})
+    : '–';
+  const devices = d.devices||[];
+  const devRows = devices.length
+    ? devices.map(dv=>`<div class="devrow">
+        <span class="dn"><span class="devdot ${dv.active?'on':'off'}"></span><span class="nm">${dv.name||dv.mac||'?'}${dv.iface?' · '+dv.iface:''}</span></span>
+        <span class="di">${dv.ip||''}</span>
+      </div>`).join('')
+    : `<div class="devrow"><span class="dn">–</span><span class="di">keine Daten</span></div>`;
+  return `<div class="card">
+    <h2><span class="dot ok"></span>FritzBox<span class="sub">${d.host||''}</span></h2>
+    <div class="row"><span class="k">Status</span><span class="v">${connPill}</span></div>
+    ${d.external_ip?`<div class="row"><span class="k">Externe IP</span><span class="v">${d.external_ip}</span></div>`:''}
+    <div class="row"><span class="k">Traffic</span><span class="v">↓ ${fmtRate(d.net_rx)} · ↑ ${fmtRate(d.net_tx)}</span></div>
+    <div class="row"><span class="k">Gesamt seit Verbindung</span><span class="v">↓ ${fmtBytes(d.bytes_received)} · ↑ ${fmtBytes(d.bytes_sent)}</span></div>
+    ${speed}
+    <div class="row"><span class="k">Uptime</span><span class="v">${d.uptime||'–'}</span></div>
+    <div class="hr"></div>
+    <div class="row"><span class="k">Geräte</span><span class="v">${d.devices_active??'–'} aktiv / ${d.devices_total??'–'} bekannt</span></div>
+    ${devErr}
+    <details class="devlist">
+      <summary>Geräteliste anzeigen<span class="devstamp">Stand ${devStamp}</span></summary>
+      ${devRows}
+    </details>
+  </div>`;
+}
+
 function ring(pct,cap,resetTs){
   const R=52,C=2*Math.PI*R, p=Math.max(0,Math.min(100,pct||0));
   const off=C*(1-p/100);
@@ -255,6 +312,7 @@ async function tick(){
     g.appendChild($(generalCard('Ubuntu-Server', d.ubuntu)));
     g.appendChild($(piholeCard(d.pihole, d.pihole_hw)));
     if(d.synology && d.synology.host){ g.appendChild($(synologyCard(d.synology, d.synology_folders))); }
+    if(d.fritzbox && d.fritzbox.host){ g.appendChild($(fritzboxCard(d.fritzbox))); }
     g.appendChild($(usageCard(d.usage)));
     if(d.website && d.website.ok){ g.appendChild($(websiteCard(d.website))); }
     document.getElementById('stamp').textContent =

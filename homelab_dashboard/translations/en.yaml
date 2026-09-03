@@ -67,3 +67,20 @@ configuration:
       description: >-
         device_id obtained via a one-time OTP login, so 2FA is not required
         on every subsequent login (see DOCS.md section 5b).
+  fritzbox:
+    name: FritzBox (optional)
+    description: >-
+      Device list (active/total) and WAN traffic of the FritzBox via TR-064.
+      See DOCS.md section 6 for setting up a dedicated FritzBox user. Leave
+      "Host" empty to disable the tile.
+    host:
+      name: Host / IP address
+      description: IP address or hostname of the FritzBox (e.g. fritz.box).
+    user:
+      name: User
+      description: >-
+        Dedicated FritzBox user with the "FRITZ!Box Settings" permission
+        (see DOCS.md). Leave empty if TR-064 allows unauthenticated access.
+    password:
+      name: Password
+      description: Password of the FritzBox user.

@@ -1,8 +1,8 @@
 # Homelab Dashboard
 
 Ein kleines **Home-Assistant-Add-on**, das mehrere Server auf einen Blick zusammenfasst –
-**HASS-Pi**, **Ubuntu-Server**, **Pi-hole** und eine **Synology DiskStation** – plus eine
-**Claude-Usage**-Kachel und einen optionalen **Webseiten-Status**.
+**HASS-Pi**, **Ubuntu-Server**, **Pi-hole**, eine **Synology DiskStation** und die
+**FritzBox** – plus eine **Claude-Usage**-Kachel und einen optionalen **Webseiten-Status**.
 Läuft als Ingress-Panel direkt in der HA-Seitenleiste (HA-Login, kein offener Port).
 
 ![Dashboard-Vorschau](docs/preview_new.png)
@@ -20,6 +20,8 @@ Läuft als Ingress-Panel direkt in der HA-Seitenleiste (HA-Login, kein offener P
 - **Synology DiskStation (optional):** CPU, RAM, Netzwerk, Temperatur, Volumes,
   Top-CPU-Prozesse, angemeldete Benutzer – plus die größten Ordner je Freigabe
   (alle 6 h im Hintergrund ermittelt, ähnlich TreeSize)
+- **FritzBox (optional):** Geräteliste (aktiv/gesamt, ausklappbar mit Name/IP/
+  Verbindungsart), WAN-Traffic rauf/runter, Sync-Speed, externe IP – per TR-064
 - **Refresh-Button** oben rechts für sofortige Aktualisierung
 
 ## Installation

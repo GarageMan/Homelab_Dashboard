@@ -8,6 +8,7 @@ das Board bleibt stehen.
 import asyncio
 import json
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -38,6 +39,7 @@ def load_options() -> dict:
     website = opts.get("website", {}) or {}
     claude_usage = opts.get("claude_usage", {}) or {}
     synology = opts.get("synology", {}) or {}
+    fritzbox = opts.get("fritzbox", {}) or {}
     return {
         "ubuntu_host": os.getenv("UBUNTU_HOST", ubuntu.get("host", "192.168.1.75")),
         "pihole_host": os.getenv("PIHOLE_HOST", pihole.get("host", "192.168.1.5")),
@@ -54,6 +56,9 @@ def load_options() -> dict:
         "synology_user": os.getenv("SYNOLOGY_USER", synology.get("user", "")),
         "synology_password": os.getenv("SYNOLOGY_PASSWORD", synology.get("password", "")),
         "synology_device_id": os.getenv("SYNOLOGY_DEVICE_ID", synology.get("device_id", "")),
+        "fritzbox_host": os.getenv("FRITZBOX_HOST", fritzbox.get("host", "")),
+        "fritzbox_user": os.getenv("FRITZBOX_USER", fritzbox.get("user", "")),
+        "fritzbox_password": os.getenv("FRITZBOX_PASSWORD", fritzbox.get("password", "")),
     }
 
 
@@ -640,6 +645,153 @@ async def _syno_folder_scan_loop() -> None:
         await asyncio.sleep(SYNOLOGY_FOLDERSCAN_SECONDS)
 
 
+# ----------------------------------------------------- Collector: FritzBox ----
+# TR-064 ist SOAP-basiert und die "fritzconnection"-Bibliothek arbeitet daher
+# synchron (kein httpx) - jeder Zugriff laeuft ueber asyncio.to_thread(). Die
+# FritzConnection-Instanz wird einmalig aufgebaut und wiederverwendet: die
+# Instanziierung fragt die geraete-spezifische TR-064-API komplett ab und
+# dauert sonst bei jedem Poll mehrere Sekunden.
+#
+# Die Geraeteliste (FritzHosts.get_hosts_info()) macht dagegen PRO GERAET einen
+# eigenen SOAP-Call - bei vielen bekannten Geraeten waere das bei jedem
+# 15s-Poll spuerbar langsam und unnoetige Last auf der FritzBox. Sie laeuft
+# deshalb, wie der Synology-Ordner-Scan oben, in einer eigenen Hintergrund-
+# schleife mit laengerem Intervall; die WAN-Traffic-Werte (billig, 1-2 Calls)
+# werden dagegen bei jedem Poll frisch geholt.
+#
+# Hinweis Traffic: TR-064 liefert nur den GESAMTEN WAN-Traffic der FritzBox,
+# keinen Traffic pro einzelnem Geraet.
+FRITZBOX_HOSTS_SCAN_SECONDS = 60
+
+_fritz_conn = None
+_fritz_conn_key: tuple | None = None
+_fritz_conn_lock = threading.Lock()
+_fritz_hosts_cache: dict = {"ok": False, "scanned_at": None, "devices_active": 0,
+                            "devices_total": 0, "devices": [], "error": "noch nicht gescannt"}
+
+
+def _fritz_get_connection(host: str, user: str, password: str):
+    """Liefert eine wiederverwendete FritzConnection-Instanz fuer (host, user)."""
+    global _fritz_conn, _fritz_conn_key
+    from fritzconnection import FritzConnection
+    key = (host, user)
+    with _fritz_conn_lock:
+        if _fritz_conn is None or _fritz_conn_key != key:
+            _fritz_conn = FritzConnection(address=host, user=user or None,
+                                          password=password, timeout=6.0)
+            _fritz_conn_key = key
+        return _fritz_conn
+
+
+def _fritz_reset_connection():
+    """Verwirft eine evtl. kaputte Verbindung, damit der naechste Versuch neu verbindet."""
+    global _fritz_conn, _fritz_conn_key
+    with _fritz_conn_lock:
+        _fritz_conn = None
+        _fritz_conn_key = None
+
+
+def _fritz_status_fetch(host: str, user: str, password: str) -> dict:
+    """Blockierend (fuer asyncio.to_thread): Verbindungsstatus + WAN-Traffic.
+
+    Einzelne Felder werden defensiv abgefragt: is_connected/external_ip/uptime
+    nutzen bei manchen Anschlussarten (insb. PPPoE/DSL) einen TR-064-Dienst,
+    der auf der jeweiligen FritzBox u. U. nicht existiert - dann bleibt genau
+    dieses Feld leer, statt die ganze Kachel zum Absturz zu bringen. Die
+    Traffic-Werte (WANCommonInterfaceConfig) sind unabhaengig vom Anschluss
+    und daher der zuverlaessigste Teil.
+    """
+    from fritzconnection.lib.fritzstatus import FritzStatus
+    try:
+        fc = _fritz_get_connection(host, user, password)
+        status = FritzStatus(fc=fc)
+    except Exception as e:
+        _fritz_reset_connection()
+        return {"ok": False, "host": host, "error": f"Verbindung fehlgeschlagen: {e}"}
+
+    out = {"ok": True, "host": host}
+    try:
+        up_bps, down_bps = status.transmission_rate  # Bytes/Sekunde
+        out["net_tx"] = _num(up_bps)
+        out["net_rx"] = _num(down_bps)
+        out["bytes_sent"] = _num(status.bytes_sent)
+        out["bytes_received"] = _num(status.bytes_received)
+    except Exception as e:
+        out["traffic_error"] = str(e)
+    try:
+        max_up, max_down = status.max_linked_bit_rate  # Bit/Sekunde
+        out["max_up_mbit"] = round(_num(max_up) / 1_000_000, 1)
+        out["max_down_mbit"] = round(_num(max_down) / 1_000_000, 1)
+    except Exception:
+        pass
+    try:
+        out["connected"] = bool(status.is_connected)
+    except Exception:
+        out["connected"] = None
+    try:
+        out["external_ip"] = status.external_ip
+    except Exception:
+        out["external_ip"] = None
+    try:
+        out["uptime"] = _fmt_uptime(status.connection_uptime)
+    except Exception:
+        out["uptime"] = None
+    return out
+
+
+def _fritz_hosts_fetch(host: str, user: str, password: str) -> dict:
+    """Blockierend: vollstaendige Geraeteliste (ein SOAP-Call pro Geraet)."""
+    from fritzconnection.lib.fritzhosts import FritzHosts
+    try:
+        fc = _fritz_get_connection(host, user, password)
+        raw = FritzHosts(fc=fc).get_hosts_info()
+    except Exception as e:
+        return {"ok": False, "host": host, "error": str(e)}
+
+    devices = [{
+        "name": h.get("name") or h.get("mac") or "?",
+        "ip": h.get("ip"),
+        "mac": h.get("mac"),
+        "iface": h.get("interface_type"),
+        "active": bool(h.get("status")),
+    } for h in raw]
+    devices.sort(key=lambda d: (not d["active"], (d["name"] or "").lower()))
+    active = sum(1 for d in devices if d["active"])
+    return {"ok": True, "host": host, "devices_active": active,
+            "devices_total": len(devices), "devices": devices}
+
+
+async def _fritz_hosts_scan_loop() -> None:
+    while True:
+        host = OPT.get("fritzbox_host")
+        if host:
+            data = await asyncio.to_thread(_fritz_hosts_fetch, host,
+                                           OPT.get("fritzbox_user", ""),
+                                           OPT.get("fritzbox_password", ""))
+            data["scanned_at"] = time.time()
+            _fritz_hosts_cache.update(data)
+        await asyncio.sleep(FRITZBOX_HOSTS_SCAN_SECONDS)
+
+
+async def collect_fritzbox(opt: dict) -> dict:
+    host = opt.get("fritzbox_host")
+    if not host:
+        return {"ok": False, "error": "kein fritzbox_host gesetzt"}
+    status = await asyncio.to_thread(_fritz_status_fetch, host,
+                                     opt.get("fritzbox_user", ""),
+                                     opt.get("fritzbox_password", ""))
+    if not status.get("ok"):
+        return status
+    hosts = _fritz_hosts_cache
+    status["devices_ok"] = hosts.get("ok", False)
+    status["devices_active"] = hosts.get("devices_active")
+    status["devices_total"] = hosts.get("devices_total")
+    status["devices"] = hosts.get("devices", [])
+    status["devices_error"] = hosts.get("error")
+    status["devices_scanned_at"] = hosts.get("scanned_at")
+    return status
+
+
 # ------------------------------------------------------------ Mock ------------
 def _mock():
     now = time.time()
@@ -687,6 +839,24 @@ def _mock():
                                       "size": 3.2e11},
                                      {"path": "/volume1/media", "label": "media", "size": 2.9e11},
                                      {"path": "/volume1/docker", "label": "docker", "size": 6.4e10}]},
+        "fritzbox": {"ok": True, "host": "192.168.178.1", "connected": True,
+                     "external_ip": "84.12.34.56", "uptime": "6 T 2 Std 41 Min",
+                     "net_tx": 0.3e6, "net_rx": 2.1e6, "bytes_sent": 4.8e11,
+                     "bytes_received": 2.1e12, "max_up_mbit": 100.0, "max_down_mbit": 250.0,
+                     "devices_ok": True, "devices_active": 14, "devices_total": 27,
+                     "devices_scanned_at": now - 20,
+                     "devices": [
+                         {"name": "dovecote", "ip": "192.168.178.10", "mac": "AA:BB:CC:00:00:01",
+                          "iface": "Ethernet", "active": True},
+                         {"name": "HASS-Pi", "ip": "192.168.178.11", "mac": "AA:BB:CC:00:00:02",
+                          "iface": "Ethernet", "active": True},
+                         {"name": "Pi-hole", "ip": "192.168.178.12", "mac": "AA:BB:CC:00:00:03",
+                          "iface": "Ethernet", "active": True},
+                         {"name": "iPhone-Lutz", "ip": "192.168.178.44", "mac": "AA:BB:CC:00:00:04",
+                          "iface": "WLAN", "active": True},
+                         {"name": "alter-Laptop", "ip": "192.168.178.88", "mac": "AA:BB:CC:00:00:05",
+                          "iface": "WLAN", "active": False},
+                     ]},
         "ts": now,
     }
 
@@ -695,6 +865,8 @@ def _mock():
 async def _start_background_jobs():
     if not MOCK and OPT.get("synology_host") and OPT.get("synology_user"):
         asyncio.create_task(_syno_folder_scan_loop())
+    if not MOCK and OPT.get("fritzbox_host"):
+        asyncio.create_task(_fritz_hosts_scan_loop())
 
 
 # ------------------------------------------------------------ Routen ----------
@@ -703,7 +875,7 @@ async def api_data():
     if MOCK:
         return JSONResponse(_mock())
     async with httpx.AsyncClient(verify=False) as client:
-        hass, ubuntu, pihole, pihole_hw, usage, website, synology = await asyncio.gather(
+        hass, ubuntu, pihole, pihole_hw, usage, website, synology, fritzbox = await asyncio.gather(
             collect_hass(client),
             collect_glances(client, OPT["ubuntu_host"], OPT["glances_port"], "Ubuntu-Server"),
             collect_pihole(client, OPT["pihole_host"], OPT["pihole_password"]),
@@ -711,10 +883,12 @@ async def api_data():
             collect_usage(client, OPT["usage_url"]),
             collect_website(OPT["website_url"], OPT["website_name"]),
             collect_synology(client, OPT),
+            collect_fritzbox(OPT),
         )
     return JSONResponse({"hass": hass, "ubuntu": ubuntu, "pihole": pihole,
                          "pihole_hw": pihole_hw, "usage": usage, "website": website,
                          "synology": synology, "synology_folders": _syno_folder_cache,
+                         "fritzbox": fritzbox,
                          "ts": time.time()})
 
 

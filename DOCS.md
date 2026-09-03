@@ -18,6 +18,7 @@ In dieser Anleitung stehen **Platzhalter** statt echter IP-Adressen. Ersetze sie
 | `IP-Ubuntu-FS`     | der Ubuntu-Server (Fileserver / DayZ / Kleinigkeiten) |
 | `IP-Pi-Hole`       | der Pi-hole-Server                                    |
 | `IP-Synology`      | deine Synology DiskStation                            |
+| `IP-Fritzbox`      | deine FritzBox (z. B. `fritz.box` oder ihre feste IP) |
 | `<benutzer>`       | dein Linux-Benutzername auf dem jeweiligen Server     |
 
 Beispiel: Steht in der Anleitung `http://IP-Ubuntu-FS:61208`, trägst du die echte
@@ -34,6 +35,7 @@ Adresse deines Ubuntu-Servers ein.
 | Pi-hole               | Glances-REST-API (Port 61208) | Pi-hole-v6-API (Queries, Blocking …) |
 | Claude Usage          | Exporter auf dem Ubuntu-Server (Port 8787) | Session-/Weekly-Auslastung |
 | Synology DiskStation  | DSM-Web-API direkt (Port 5001, https) | CPU/RAM/Netz/Temp/Volumes, Top-Prozesse, angemeldete Benutzer, größte Ordner (Hintergrund-Scan) |
+| FritzBox              | TR-064 (`fritzconnection`) | Geräteliste (aktiv/gesamt, ausklappbar), WAN-Traffic rauf/runter, Sync-Speed, externe IP |
 
 Ein FastAPI-Aggregator im Add-on fragt alle Quellen parallel und gekapselt ab;
 fällt eine aus, zeigt nur ihre Kachel „nicht erreichbar", das Board bleibt stehen.
@@ -398,7 +400,75 @@ nachsehen — die Fehlermeldung enthält die betroffene API und den DSM-Fehlerco
 
 ---
 
-## 6. Konfigurationsoptionen
+## 6. FritzBox (optional)
+
+Liest Geräteliste (aktiv/gesamt) und WAN-Traffic per **TR-064** — dem lokalen
+SOAP-Protokoll der FritzBox — über die Python-Bibliothek `fritzconnection`.
+Kein Cloud-Umweg, keine MyFritz-Anmeldung nötig.
+
+> **Kein Traffic pro Gerät:** TR-064 liefert nur den **gesamten** WAN-Traffic
+> der FritzBox, keinen Traffic-Zähler pro einzelnem Client.
+
+### 6a. Dedizierten FritzBox-Benutzer anlegen
+
+Eigenes Konto statt des Admin-Logins verwenden:
+
+**FritzBox-Oberfläche → System → FritzBox-Benutzer → Benutzer hinzufügen**
+
+- Benutzername z. B. `dashboard-api`, eigenes Passwort vergeben
+- Berechtigung **„FRITZ!Box Einstellungen"** aktivieren (Pflicht für TR-064)
+- Alle anderen Berechtigungen (Sprachnachrichten, Smart Home, NAS-Inhalte …)
+  können deaktiviert bleiben
+
+### 6b. Zugriff für Anwendungen erlauben
+
+TR-064 ist standardmäßig aus. Aktivieren unter:
+
+**Heimnetz → Netzwerk → Netzwerkeinstellungen → „Zugriff für Anwendungen
+erlauben"** (Haken setzen, speichern)
+
+Ohne diesen Haken schlägt jeder TR-064-Zugriff fehl, unabhängig von
+Benutzername/Passwort.
+
+### 6c. Add-on-Optionen setzen
+
+Im Reiter **Konfiguration** des Add-ons:
+
+```yaml
+fritzbox:
+  host: IP-Fritzbox
+  user: dashboard-api
+  password: "DEIN-PASSWORT"
+```
+
+Ist `fritzbox.host` leer, blendet sich die Kachel komplett aus.
+
+### 6d. Funktionstest
+
+```bash
+curl -s "http://IP-Fritzbox:49000/tr64desc.xml" | head -5
+```
+
+Kommt XML zurück, ist TR-064 grundsätzlich erreichbar. Bricht die Kachel im
+Dashboard trotzdem ab, im Add-on-**Protokoll** nachsehen — die Fehlermeldung
+von `fritzconnection` enthält meist den genauen Grund (z. B. „401 Unauthorized"
+bei falschem Benutzer/Passwort, oder eine fehlende Berechtigung).
+
+> **Geräteliste erscheint erst nach ~1 Minute:** Sie wird — anders als Traffic
+> und Status — nicht bei jedem 15s-Poll neu geholt, sondern alle 60 Sekunden im
+> Hintergrund gescannt (ein TR-064-Call **pro bekanntem Gerät** wäre bei jedem
+> Poll spürbar langsam und unnötige Last auf der FritzBox). Direkt nach dem
+> Add-on-Start zeigt die Kachel deshalb kurz „noch nicht gescannt".
+>
+> **PPPoE/DSL-Anschlüsse:** Verbindungsstatus und externe IP nutzen einen
+> TR-064-Dienst, der je nach Anschlussart (PPPoE vs. IP-basiert, z. B. Kabel)
+> auf manchen FritzBox-Modellen fehlt. Fehlt er, bleiben genau diese beiden
+> Zeilen leer — Traffic-Werte und Geräteliste sind davon unabhängig und
+> funktionieren in jedem Fall.
+
+---
+
+## 7. Konfigurationsoptionen
 
 Seit Version 1.3.0 ist das Konfigurationsformular in Abschnitte gruppiert.
 Beim Umstieg von einer älteren Version müssen die Werte einmalig neu
@@ -426,13 +496,17 @@ alten, flachen Optionsnamen in die neuen Gruppen.
 | `synology.user`                | dedizierter API-Benutzer (Abschnitt 5a)           | `dashboard-api`                |
 | `synology.password`            | Passwort dieses Benutzers                         | `••••••`                       |
 | `synology.device_id`           | Geräte-Token bei erzwungenem 2FA (Abschnitt 5b)   | leer, falls kein 2FA           |
+| **FritzBox (optional)**       |                                                     |                                 |
+| `fritzbox.host`               | Adresse der FritzBox (leer = Kachel aus)          | `IP-Fritzbox`                  |
+| `fritzbox.user`               | dedizierter FritzBox-Benutzer (Abschnitt 6a)      | `dashboard-api`                |
+| `fritzbox.password`           | Passwort dieses Benutzers                         | `••••••`                       |
 
 Alle Werte lassen sich jederzeit im Reiter **Konfiguration** ändern — kein
 Rebuild nötig.
 
 ---
 
-## 7. Fehlersuche
+## 8. Fehlersuche
 
 | Symptom | Ursache / Lösung |
 |---|---|
@@ -450,11 +524,23 @@ Rebuild nötig.
 | Synology-API-Fehler Code 105/106/107/119 | Session abgelaufen — wird beim nächsten Poll automatisch neu eingeloggt; bleibt es bestehen, `synology.password`/`synology.device_id` prüfen |
 | Synology „Größte Ordner": kein Scan | Läuft erst 6 h nach Add-on-Start und braucht `synology_user` mit File-Station-Zugriff (Abschnitt 5a) |
 | Einzelne Synology-Zeile zeigt „–" | DSM-JSON-Feldname weicht ab — siehe Hinweis in Abschnitt 5d |
+| FritzBox-Kachel fehlt | `fritzbox.host` ist leer — sobald gesetzt, erscheint die Kachel |
+| FritzBox „401 Unauthorized" / Verbindung fehlgeschlagen | Benutzer/Passwort falsch, oder Berechtigung „FRITZ!Box Einstellungen" fehlt (Abschnitt 6a) |
+| FritzBox: alle Felder leer trotz „ok" | „Zugriff für Anwendungen erlauben" nicht aktiviert (Abschnitt 6b) |
+| FritzBox: nur Status/externe IP fehlen, Traffic da | Anschlussart-bedingte TR-064-Einschränkung — siehe Hinweis am Ende von Abschnitt 6d, unkritisch |
+| FritzBox-Geräteliste zeigt „noch nicht gescannt" | Scan läuft alle 60 s im Hintergrund, direkt nach Add-on-Start kurz normal |
 
 ---
 
 ## Versionshinweise
 
+- **1.4.0** — Neue FritzBox-Kachel: Geräteliste (aktiv/gesamt, ausklappbar mit
+  Name/IP/Verbindungsart) und WAN-Traffic (rauf/runter, Gesamt seit
+  Verbindung, Sync-Speed, externe IP) per TR-064 (`fritzconnection`). Die
+  Geräteliste läuft — anders als Traffic/Status — alle 60 s im Hintergrund,
+  um die FritzBox bei vielen bekannten Geräten nicht mit einem SOAP-Call pro
+  Gerät bei jedem 15s-Poll zu belasten. Konfiguration über
+  `fritzbox.host`/`.user`/`.password` (siehe Abschnitt 6).
 - **Doku-Fix** — Abschnitt 5a korrigiert: Die Anwendung „DSM" muss beim
   dedizierten Benutzer erlaubt bleiben (nicht verweigert werden), sonst
   scheitert sowohl der GUI- als auch der API-Login, da beide dieselbe

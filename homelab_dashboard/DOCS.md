@@ -352,7 +352,34 @@ im Repo-Wurzelverzeichnis.
 
 ---
 
-## 6. Konfigurationsoptionen
+## 6. FritzBox (optional)
+
+Geräteliste (aktiv/gesamt, ausklappbar) und WAN-Traffic per **TR-064** über die
+Bibliothek `fritzconnection`. Kein Traffic pro einzelnem Gerät — TR-064 liefert
+nur den Gesamt-WAN-Traffic.
+
+1. **FritzBox-Oberfläche → System → FritzBox-Benutzer** → eigenen Benutzer
+   anlegen (z. B. `dashboard-api`), Berechtigung **„FRITZ!Box Einstellungen"**
+   aktivieren
+2. **Heimnetz → Netzwerk → Netzwerkeinstellungen → „Zugriff für Anwendungen
+   erlauben"** aktivieren (sonst schlägt TR-064 grundsätzlich fehl)
+3. Add-on-Optionen:
+   ```yaml
+   fritzbox:
+     host: IP-Fritzbox
+     user: dashboard-api
+     password: "DEIN-PASSWORT"
+   ```
+
+Ist `fritzbox.host` leer, blendet sich die Kachel komplett aus. Die
+Geräteliste braucht bis zu 60 s nach dem Add-on-Start (Hintergrund-Scan, um
+nicht bei jedem Poll einen TR-064-Call pro bekanntem Gerät zu machen). Details
+und Fehlersuche stehen ausführlicher im
+[Haupt-DOCS.md](../DOCS.md#6-fritzbox-optional) im Repo-Wurzelverzeichnis.
+
+---
+
+## 7. Konfigurationsoptionen
 
 Seit Version 1.3.0 ist das Konfigurationsformular in Abschnitte gruppiert.
 Beim Umstieg von einer älteren Version müssen die Werte einmalig neu
@@ -377,13 +404,17 @@ alten, flachen Optionsnamen in die neuen Gruppen.
 | `synology.user`                | dedizierter API-Benutzer (Abschnitt 5a)           | `dashboard-api`                |
 | `synology.password`            | Passwort dieses Benutzers                         | `••••••`                       |
 | `synology.device_id`           | Geräte-Token bei erzwungenem 2FA (Abschnitt 5b)   | leer, falls kein 2FA           |
+| **FritzBox (optional)**       |                                                     |                                 |
+| `fritzbox.host`               | Adresse der FritzBox (leer = Kachel aus)          | `IP-Fritzbox`                  |
+| `fritzbox.user`               | dedizierter FritzBox-Benutzer (Abschnitt 6)       | `dashboard-api`                |
+| `fritzbox.password`           | Passwort dieses Benutzers                         | `••••••`                       |
 
 Alle Werte lassen sich jederzeit im Reiter **Konfiguration** ändern — kein
 Rebuild nötig.
 
 ---
 
-## 7. Fehlersuche
+## 8. Fehlersuche
 
 | Symptom | Ursache / Lösung |
 |---|---|
@@ -398,11 +429,15 @@ Rebuild nötig.
 | Synology-Kachel fehlt | `synology.host` ist leer — sobald gesetzt, erscheint die Kachel |
 | Synology „Login fehlgeschlagen" | Benutzer/Passwort falsch, oder 2FA erzwungen ohne gültige `synology.device_id` (Abschnitt 5b) |
 | Synology „Größte Ordner": kein Scan | Läuft erst 6 h nach Add-on-Start und braucht `synology_user` mit File-Station-Zugriff (Abschnitt 5a) |
+| FritzBox-Kachel fehlt | `fritzbox.host` ist leer — sobald gesetzt, erscheint die Kachel |
+| FritzBox „401 Unauthorized" | Benutzer/Passwort falsch, oder Berechtigung „FRITZ!Box Einstellungen" fehlt (Abschnitt 6) |
 
 ---
 
 ## Versionshinweise
 
+- **1.4.0** — Neue FritzBox-Kachel (Geräteliste + WAN-Traffic per TR-064).
+  Details siehe Abschnitt 6 und [Haupt-DOCS.md](../DOCS.md#6-fritzbox-optional).
 - **Doku-Fix** — Abschnitt 5a korrigiert: Die Anwendung „DSM" muss beim
   dedizierten Benutzer erlaubt bleiben (nicht verweigert werden), sonst
   scheitert sowohl der GUI- als auch der API-Login, da beide dieselbe
