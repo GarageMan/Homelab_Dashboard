@@ -3,9 +3,7 @@ version: "1.4.0"
 slug: homelab_dashboard
 description: >-
   Konsolidiertes Dashboard fuer HASS-Pi, Ubuntu-Server, Pi-hole, Synology
-  DiskStation und FritzBox (CPU, Temp, RAM, Storage, Netzwerk, Updates,
-  Pi-hole-Stats, Claude-Usage, Synology-Prozesse/-Benutzer/-Ordnergroessen,
-  FritzBox-Geraeteliste/-Traffic).
+  DiskStation und FritzBox
 url: "https://local/homelab-dashboard"
 arch:
   - aarch64
