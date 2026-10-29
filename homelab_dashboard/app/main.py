@@ -392,6 +392,8 @@ SYNOLOGY_FOLDERSCAN_SECONDS = 6 * 3600
 SYNOLOGY_FOLDERSCAN_MAX_SHARES = 8
 SYNOLOGY_FOLDERSCAN_MAX_SUBFOLDERS = 25
 SYNOLOGY_FOLDERSCAN_TOP_N = 12
+SYNOLOGY_UPDATECHECK_SECONDS = 24 * 3600
+SYNOLOGY_UPDATECHECK_RETRY_SECONDS = 30 * 60
 SYNOLOGY_SESSION_ERROR_CODES = (105, 106, 107, 119)  # ungueltige/abgelaufene Session
 
 _syno_sid: dict = {"sid": None, "synotoken": None}
@@ -487,12 +489,15 @@ async def collect_synology(client: httpx.AsyncClient, opt: dict) -> dict:
     if not host or not opt.get("synology_user"):
         return {"ok": False, "error": "kein synology_host/synology_user gesetzt"}
     try:
-        util, sysinfo, storage, procs, conns = await asyncio.gather(
+        util, sysinfo, storage, procs, conns, fw = await asyncio.gather(
             _syno_get(client, opt, "SYNO.Core.System.Utilization", 1, "get"),
             _syno_get(client, opt, "SYNO.Core.System", 1, "info", {"type": "storage"}),
             _syno_get(client, opt, "SYNO.Storage.CGI.Storage", 1, "load_info"),
             _syno_get(client, opt, "SYNO.Core.System.Process", 1, "list", {"additional": '["cpu","mem"]'}),
             _syno_get(client, opt, "SYNO.Core.CurrentConnection", 1, "list", {"offset": 0, "limit": 30}),
+            # "info" ohne "type": liefert firmware_ver (DSM-Version), nicht Teil
+            # der "type":"storage"-Antwort.
+            _syno_get(client, opt, "SYNO.Core.System", 1, "info"),
         )
     except Exception as e:
         return {"ok": False, "host": host, "error": str(e)}
@@ -553,7 +558,8 @@ async def collect_synology(client: httpx.AsyncClient, opt: dict) -> dict:
     return {
         "ok": True,
         "host": host,
-        "model": sysinfo.get("model"),
+        "model": sysinfo.get("model") or fw.get("model"),
+        "dsm_version": fw.get("firmware_ver") or sysinfo.get("firmware_ver"),
         "temp_c": round(_num(sys_temp), 1) if sys_temp not in (None, "") else None,
         "uptime": _fmt_uptime(_num(up_time)) if up_time else None,
         "cpu_pct": cpu_pct,
@@ -643,6 +649,46 @@ async def _syno_folder_scan_loop() -> None:
         except Exception:
             pass
         await asyncio.sleep(SYNOLOGY_FOLDERSCAN_SECONDS)
+
+
+# ------------------------------------- Hintergrund-Job: DSM-Update-Check ------
+# Nutzt DSMs eigene Update-Pruefung (dieselbe API, die der "Nach Updates
+# suchen"-Button im DSM-GUI aufruft) statt irgendeine externe Versionsliste zu
+# pflegen - DSM weiss selbst am besten, ob und worauf aktualisiert werden kann.
+# Laeuft als taeglicher Hintergrund-Job (nicht bei jedem 15s-Poll), da der Call
+# DSMs eigene Update-Server im Internet kontaktiert.
+_syno_update_cache: dict = {"ok": False, "checked_at": None, "available": None,
+                            "version": None, "error": "noch nicht geprueft"}
+
+
+async def _syno_check_update_once(opt: dict) -> None:
+    if not opt.get("synology_host") or not opt.get("synology_user"):
+        return
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            d = await _syno_get(client, opt, "SYNO.Core.Upgrade.Server", 3, "check",
+                                {"user_reading": "true", "need_auto_smallupdate": "true",
+                                 "need_promotion": "true"})
+        upd = d.get("update") if isinstance(d.get("update"), dict) else d
+        _syno_update_cache.update({
+            "ok": True, "error": None, "checked_at": time.time(),
+            "available": bool(upd.get("available")),
+            "version": upd.get("version"),
+        })
+    except Exception as e:
+        _syno_update_cache.update({"ok": False, "error": str(e), "checked_at": time.time()})
+
+
+async def _syno_update_check_loop() -> None:
+    while True:
+        try:
+            await _syno_check_update_once(OPT)
+        except Exception:
+            pass
+        # bei Fehlschlag (z.B. kein Internetzugang der DiskStation) frueher
+        # erneut versuchen statt einen ganzen Tag zu warten
+        await asyncio.sleep(SYNOLOGY_UPDATECHECK_SECONDS if _syno_update_cache.get("ok")
+                            else SYNOLOGY_UPDATECHECK_RETRY_SECONDS)
 
 
 # ----------------------------------------------------- Collector: FritzBox ----
@@ -824,6 +870,7 @@ def _mock():
         "website": {"ok": True, "name": "LaMetric-Uhr", "url": "http://192.168.1.7",
                     "up": True, "status": 200, "ms": 34},
         "synology": {"ok": True, "host": "192.168.178.25", "model": "DS920+",
+                     "dsm_version": "DSM 7.2.2-72806 Update 3",
                      "temp_c": 41.0, "uptime": "12 T 4 Std 30 Min", "cpu_pct": 7.5, "mem_pct": 68.0,
                      "net_rx": 1.4e6, "net_tx": 0.3e6,
                      "volumes": [{"id": "Volume 1", "status": "normal", "used": 2e12,
@@ -839,6 +886,8 @@ def _mock():
                                       "size": 3.2e11},
                                      {"path": "/volume1/media", "label": "media", "size": 2.9e11},
                                      {"path": "/volume1/docker", "label": "docker", "size": 6.4e10}]},
+        "synology_update": {"ok": True, "error": None, "checked_at": now - 7200,
+                            "available": True, "version": "DSM 7.2.3-80000"},
         "fritzbox": {"ok": True, "host": "192.168.178.1", "connected": True,
                      "external_ip": "84.12.34.56", "uptime": "6 T 2 Std 41 Min",
                      "net_tx": 0.3e6, "net_rx": 2.1e6, "bytes_sent": 4.8e11,
@@ -865,6 +914,7 @@ def _mock():
 async def _start_background_jobs():
     if not MOCK and OPT.get("synology_host") and OPT.get("synology_user"):
         asyncio.create_task(_syno_folder_scan_loop())
+        asyncio.create_task(_syno_update_check_loop())
     if not MOCK and OPT.get("fritzbox_host"):
         asyncio.create_task(_fritz_hosts_scan_loop())
 
@@ -888,6 +938,7 @@ async def api_data():
     return JSONResponse({"hass": hass, "ubuntu": ubuntu, "pihole": pihole,
                          "pihole_hw": pihole_hw, "usage": usage, "website": website,
                          "synology": synology, "synology_folders": _syno_folder_cache,
+                         "synology_update": _syno_update_cache,
                          "fritzbox": fritzbox,
                          "ts": time.time()})
 

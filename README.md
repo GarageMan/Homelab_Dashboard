@@ -18,8 +18,9 @@ Läuft als Ingress-Panel direkt in der HA-Seitenleiste (HA-Login, kein offener P
 - **Webseite (optional):** Online/Offline, HTTP-Code und Antwortzeit einer frei
   konfigurierbaren URL
 - **Synology DiskStation (optional):** CPU, RAM, Netzwerk, Temperatur, Volumes,
-  Top-CPU-Prozesse, angemeldete Benutzer – plus die größten Ordner je Freigabe
-  (alle 6 h im Hintergrund ermittelt, ähnlich TreeSize)
+  Top-CPU-Prozesse, angemeldete Benutzer, DSM-Version mit Update-Warnung – plus
+  die größten Ordner je Freigabe (alle 6 h im Hintergrund ermittelt, ähnlich
+  TreeSize)
 - **FritzBox (optional):** Geräteliste (aktiv/gesamt, ausklappbar mit Name/IP/
   Verbindungsart), WAN-Traffic rauf/runter, Sync-Speed, externe IP – per TR-064
 - **Refresh-Button** oben rechts für sofortige Aktualisierung
