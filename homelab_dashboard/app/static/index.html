@@ -161,11 +161,18 @@ function sectionLabel(text){
   return `<div class="row" style="margin-top:8px"><span class="k" style="color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.4px">${text}</span></div>`;
 }
 
-function synologyCard(d, folders){
+function synologyCard(d, folders, update){
   if(!d||!d.ok){
     return `<div class="card"><h2><span class="dot bad"></span>Synology DiskStation
             <span class="sub">nicht erreichbar</span></h2>
             <div class="err">${(d&&d.error)||'keine Daten'}</div></div>`;
+  }
+  let versionRow = '';
+  if(d.dsm_version){
+    const updPill = (update && update.ok && update.available)
+      ? `<span class="pill amber">Update verfügbar${update.version?': '+update.version:''}</span>`
+      : (update && update.ok ? `<span class="pill ok">aktuell</span>` : '');
+    versionRow = `<div class="row"><span class="k">Version</span><span class="v">${d.dsm_version} ${updPill}</span></div>`;
   }
   const vol = (d.volumes||[]).map(v=>{
     const statCol = v.status==='normal'?'var(--ok)':'var(--warn)';
@@ -194,6 +201,7 @@ function synologyCard(d, folders){
   }
   return `<div class="card">
     <h2><span class="dot ok"></span>Synology DiskStation<span class="sub">${d.model||''}</span></h2>
+    ${versionRow}
     ${bar('CPU', d.cpu_pct)}
     ${bar('RAM', d.mem_pct)}
     ${vol}
@@ -311,7 +319,7 @@ async function tick(){
     g.appendChild($(hassCard(d.hass)));
     g.appendChild($(generalCard('Ubuntu-Server', d.ubuntu)));
     g.appendChild($(piholeCard(d.pihole, d.pihole_hw)));
-    if(d.synology && d.synology.host){ g.appendChild($(synologyCard(d.synology, d.synology_folders))); }
+    if(d.synology && d.synology.host){ g.appendChild($(synologyCard(d.synology, d.synology_folders, d.synology_update))); }
     if(d.fritzbox && d.fritzbox.host){ g.appendChild($(fritzboxCard(d.fritzbox))); }
     g.appendChild($(usageCard(d.usage)));
     if(d.website && d.website.ok){ g.appendChild($(websiteCard(d.website))); }

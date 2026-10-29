@@ -292,8 +292,11 @@ Add-on **Aktualisieren** → **Starten**.
 Zeigt CPU, RAM, Netzwerk, Temperatur, Volumes, die CPU-hungrigsten Prozesse und
 angemeldete Benutzer der DiskStation — plus, alle 6 Stunden im Hintergrund neu
 berechnet, die größten Ordner je Freigabe (2 Ebenen tief), ähnlich TreeSize.
-Läuft komplett über die eingebaute DSM-Web-API, es muss nichts auf der
-DiskStation installiert werden.
+Außerdem die installierte DSM-Version, mit einer Warnung, falls ein Update
+verfügbar ist (dafür wird einmal täglich im Hintergrund DSMs eigene
+Update-Prüfung abgefragt — dieselbe, die auch der "Nach Updates suchen"-Button
+im DSM-GUI nutzt; kein externer Versionsvergleich). Läuft komplett über die
+eingebaute DSM-Web-API, es muss nichts auf der DiskStation installiert werden.
 
 ### 5a. Eigenen Benutzer in DSM anlegen
 
@@ -436,6 +439,12 @@ Rebuild nötig.
 
 ## Versionshinweise
 
+- **1.5.0** — Synology-Kachel zeigt jetzt die installierte DSM-Version und
+  warnt, wenn ein Update verfügbar ist. Nutzt dafür DSMs eigene
+  Update-Prüfung (`SYNO.Core.Upgrade.Server`, dieselbe API wie der
+  "Nach Updates suchen"-Button im DSM-GUI) als taeglichen Hintergrund-Job,
+  kein externer Versionsvergleich und keine zusaetzliche Add-on-Option
+  noetig (nutzt die bestehenden `synology.*`-Zugangsdaten).
 - **1.4.0** — Neue FritzBox-Kachel (Geräteliste + WAN-Traffic per TR-064).
   Details siehe Abschnitt 6 und [Haupt-DOCS.md](../DOCS.md#6-fritzbox-optional).
 - **Doku-Fix** — Abschnitt 5a korrigiert: Die Anwendung „DSM" muss beim
